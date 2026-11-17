@@ -1,50 +1,114 @@
-import { useEffect } from "react";
-import { PlusCircle } from "lucide-react";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect, useState } from "react";
+import { Loader2, LogOut, PlusCircle, RefreshCw, Trash2 } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
-import { AppShell } from "@/components/layout/AppShell";
-import { CallsPage } from "@/pages/CallsPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
-import { SessionHeader } from "@/components/domain/session/SessionHeader";
-import { IncomingCallModal } from "@/components/domain/call/IncomingCallModal";
-import { TransferOfferModal } from "@/components/domain/call/TransferOfferModal";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { RelayDashboard } from "@/pages/RelayDashboard";
+import { createSession, deleteSession, logoutSession, pairSession } from "@/services/sessions";
 import { ensureSessionsWired, useSessions } from "@/stores/sessions";
-import { ensureCallsWired } from "@/stores/calls";
 import { useTheme } from "@/stores/theme";
+import { phoneFromJid } from "@/utils/format";
 
 export const App = () => {
-  const sessions = useSessions((s) => s.sessions);
-  const activeId = useSessions((s) => s.activeId);
-  const theme = useTheme((s) => s.theme);
+  const sessions = useSessions((state) => state.sessions);
+  const theme = useTheme((state) => state.theme);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     ensureSessionsWired();
-    ensureCallsWired();
   }, []);
 
-  const active = sessions.find((s) => s.id === activeId) ?? null;
+  const session = sessions[0] ?? null;
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <TooltipProvider delayDuration={200}>
-      <AppShell>
-        {sessions.length === 0 ? (
-          <EmptyState
-            icon={<PlusCircle className="h-6 w-6" />}
-            title="Nenhuma conta ainda"
-            description="Crie sua primeira conta de WhatsApp na barra lateral para começar a ligar."
-          />
-        ) : active ? (
-          <div className="space-y-6">
-            <SessionHeader session={active} />
-            {active.paired ? <CallsPage sid={active.id} /> : <SessionPairing session={active} />}
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="border-b">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
+            <div>
+              <h1 className="text-xl font-semibold">WA SIP Relay</h1>
+              <p className="text-sm text-muted-foreground">WhatsApp voice calls bridged to SIP.</p>
+            </div>
+            {session && (
+              <div className="flex items-center gap-2">
+                <Badge variant={session.paired ? "success" : "secondary"}>
+                  {session.paired ? "WhatsApp connected" : "Pairing required"}
+                </Badge>
+                {session.paired ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void run(() => logoutSession(session.id))}
+                  >
+                    <LogOut className="h-4 w-4" /> Unlink
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => void run(() => pairSession(session.id))}
+                  >
+                    <RefreshCw className="h-4 w-4" /> Pair
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
-        ) : (
-          <EmptyState title="Selecione uma conta" description="Escolha uma conta na barra lateral." />
-        )}
-      </AppShell>
-      <IncomingCallModal />
-      <TransferOfferModal />
+        </header>
+
+        <main className="mx-auto max-w-6xl space-y-5 px-4 py-6">
+          {!session ? (
+            <div className="mx-auto flex max-w-lg flex-col items-center gap-4 rounded-xl border p-8 text-center">
+              <PlusCircle className="h-8 w-8 text-muted-foreground" />
+              <div>
+                <h2 className="font-medium">Create the WhatsApp relay account</h2>
+                <p className="text-sm text-muted-foreground">One linked WhatsApp account is supported.</p>
+              </div>
+              <Button disabled={busy} onClick={() => void run(() => createSession("WhatsApp Relay"))}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
+                Create account
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
+                <div>
+                  <div className="font-medium">{session.name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {phoneFromJid(session.jid || session.lastJid) || "No linked number"}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm("Delete the relay account and its stored WhatsApp device?")) {
+                      void run(() => deleteSession(session.id));
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" /> Reset account
+                </Button>
+              </div>
+              {session.paired ? <RelayDashboard session={session} /> : <SessionPairing session={session} />}
+            </>
+          )}
+        </main>
+      </div>
       <Toaster theme={theme} position="top-right" richColors closeButton />
     </TooltipProvider>
   );

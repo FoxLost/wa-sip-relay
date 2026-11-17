@@ -226,8 +226,11 @@ func buildSIPSDPAnswer(localIP string, rtpPort int, pt, dtmfPT uint8) string {
 	extra := ""
 	if dtmfPT != 0 {
 		fmts += " " + strconv.Itoa(int(dtmfPT))
-		extra = fmt.Sprintf("a=rtpmap:%d telephone-event/8000\na=fmtp:%d 0-16\n", dtmfPT, dtmfPT)
+		extra = fmt.Sprintf("a=rtpmap:%d telephone-event/8000\r\na=fmtp:%d 0-16\r\n", dtmfPT, dtmfPT)
 	}
-	return fmt.Sprintf("v=0\no=AstraCalls 0 0 IN IP4 %s\ns=AstraCalls SIP Gateway\nc=IN IP4 %s\nt=0 0\nm=audio %d RTP/AVP %s\na=rtpmap:%d %s/8000\n%sa=ptime:20\na=sendrecv\n",
-		localIP, localIP, rtpPort, fmts, pt, g711Name(pt), extra)
+	return fmt.Sprintf(
+		"v=0\r\no=WASIPRelay 0 0 IN IP4 %s\r\ns=WA SIP Relay\r\nc=IN IP4 %s\r\nt=0 0\r\n"+
+			"m=audio %d RTP/AVP %s\r\na=rtpmap:%d %s/8000\r\n%sa=ptime:20\r\na=sendrecv\r\n",
+		localIP, localIP, rtpPort, fmts, pt, g711Name(pt), extra,
+	)
 }

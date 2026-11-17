@@ -37,6 +37,7 @@ type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	order    []string
+	creating bool
 }
 
 func newSessionManager(ctx context.Context, db *dbProvider, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls int) *SessionManager {
@@ -268,6 +269,18 @@ func (m *SessionManager) Restore(ctx context.Context) error {
 }
 
 func (m *SessionManager) Create(name string) (string, error) {
+	m.mu.Lock()
+	if len(m.sessions) != 0 || m.creating {
+		m.mu.Unlock()
+		return "", fmt.Errorf("wa-sip-relay supports one WhatsApp account")
+	}
+	m.creating = true
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.creating = false
+		m.mu.Unlock()
+	}()
 	id := newSessionID()
 	sipUser, sipPass, err := m.store.insert(m.appCtx, id, name)
 	if err != nil {

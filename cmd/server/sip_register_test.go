@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -136,5 +137,32 @@ func TestSIPExtAuthUser(t *testing.T) {
 	c.Agent.AuthUser = " aB3xY9kL "
 	if got := c.authUser(); got != "aB3xY9kL" {
 		t.Fatalf("com Auth ID (3CX) deve usá-lo no digest, veio %q", got)
+	}
+}
+
+func TestExpireUnansweredSIPCallReleasesCapacity(t *testing.T) {
+	stale := &sipCall{sipCallID: "stale"}
+	gw := &SIPGateway{activeCalls: map[string]*sipCall{"stale": stale}}
+	var answered, timedOut atomic.Bool
+
+	if !gw.expireUnansweredSIPCall("stale", stale, &answered, &timedOut) {
+		t.Fatal("unanswered call was not expired")
+	}
+	if !timedOut.Load() {
+		t.Fatal("expired call was not marked as timed out")
+	}
+	if len(gw.activeCalls) != 0 {
+		t.Fatalf("expired call still consumes capacity: %#v", gw.activeCalls)
+	}
+
+	active := &sipCall{sipCallID: "active"}
+	gw.activeCalls["active"] = active
+	answered.Store(true)
+	timedOut.Store(false)
+	if gw.expireUnansweredSIPCall("active", active, &answered, &timedOut) {
+		t.Fatal("answered call must not be expired")
+	}
+	if gw.activeCalls["active"] != active {
+		t.Fatal("answered call was removed")
 	}
 }

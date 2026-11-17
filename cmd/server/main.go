@@ -61,6 +61,11 @@ func main() {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	if os.Getenv("WACALLS_API_KEY") == "" {
+		log.Error("WACALLS_API_KEY is required")
+		os.Exit(2)
+	}
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

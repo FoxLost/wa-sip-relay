@@ -18,6 +18,8 @@ import (
 	"wacalls/internal/voip/core"
 )
 
+var sipOutboundRingTimeout = 60 * time.Second
+
 type SIPGateway struct {
 	server   *sipgo.Server
 	client   *sipgo.Client
@@ -98,8 +100,24 @@ type sipCall struct {
 	remoteRTP string // remote IP:port for RTP
 }
 
+func (gw *SIPGateway) expireUnansweredSIPCall(
+	sipCallID string,
+	expected *sipCall,
+	answered, timedOut *atomic.Bool,
+) bool {
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	current, active := gw.activeCalls[sipCallID]
+	if !active || current != expected || answered.Load() {
+		return false
+	}
+	timedOut.Store(true)
+	delete(gw.activeCalls, sipCallID)
+	return true
+}
+
 func NewSIPGateway(sessions *SessionManager, log *slog.Logger) (*SIPGateway, error) {
-	ua, err := sipgo.NewUA(sipgo.WithUserAgent("AstraCalls-SIP/1.0"))
+	ua, err := sipgo.NewUA(sipgo.WithUserAgent("WA-SIP-Relay/1.0"))
 	if err != nil {
 		return nil, fmt.Errorf("sipgo ua: %w", err)
 	}
@@ -482,10 +500,29 @@ func (gw *SIPGateway) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 		}
 	}()
 
-	// Send 200 OK only when WhatsApp call is connected (Active)
+	// Send 200 OK only when WhatsApp call is connected (Active).
 	var answered atomic.Bool
+	var timedOut atomic.Bool
+	ringTimer := time.AfterFunc(sipOutboundRingTimeout, func() {
+		if !gw.expireUnansweredSIPCall(sipCallID, sc, &answered, &timedOut) {
+			return
+		}
+		gw.log.Info("SIP INVITE: ringing timeout", "sip_call_id", sipCallID, "wa_call_id", callID)
+		fail(408, "Request Timeout")
+		settle()
+		sess.terminateCallByID(callID)
+	})
+	defer ringTimer.Stop()
 	rtpBridge.OnActive = func() {
+		gw.mu.Lock()
+		current, stillActive := gw.activeCalls[sipCallID]
+		if !stillActive || current != sc || timedOut.Load() {
+			gw.mu.Unlock()
+			return
+		}
 		answered.Store(true)
+		gw.mu.Unlock()
+		ringTimer.Stop()
 		gw.log.Info("SIP INVITE: Call connected on WhatsApp, sending 200 OK", "sip_call_id", sipCallID, "wa_call_id", callID)
 		// o 200 retransmite até o ACK chegar (handleAck → ReadAck): não segura o
 		// callback do WhatsApp.
@@ -500,6 +537,7 @@ func (gw *SIPGateway) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 	}
 
 	rtpBridge.OnEnded = func(reason string) {
+		ringTimer.Stop()
 		gw.log.Info("SIP INVITE/CALL: WhatsApp call ended", "sip_call_id", sipCallID, "reason", reason)
 
 		gw.mu.Lock()
@@ -507,6 +545,9 @@ func (gw *SIPGateway) handleInvite(req *sip.Request, tx sip.ServerTransaction) {
 		delete(gw.activeCalls, sipCallID)
 		gw.mu.Unlock()
 
+		if timedOut.Load() {
+			return
+		}
 		if answered.Load() {
 			// atendida: o WhatsApp desligou -> BYE para o PBX (se foi o PBX que
 			// mandou BYE, o diálogo já terminou e o Bye não faz nada). Quem libera o
@@ -993,9 +1034,15 @@ func (gw *SIPGateway) handleInboundCall(sess *Session, callID, peerNumber string
 			return
 		}
 
-		// 200 OK: pega o RTP remoto do softphone e fecha a ponte.
-		if remoteRTP := extractRTPAddress(string(d.InviteResponse.Body())); remoteRTP != "" {
-			if addr, e := net.ResolveUDPAddr("udp", remoteRTP); e == nil {
+		// 200 OK: use the G.711 payload and RTP endpoint selected by the phone.
+		answer := parseSDPOffer(string(d.InviteResponse.Body()))
+		pt := rtpPTPCMU
+		if negotiated, ok := answer.pickG711(); ok {
+			pt = negotiated
+		}
+		rtpBridge.SetCodec(pt, answer.dtmfPT)
+		if answer.addr != "" {
+			if addr, e := net.ResolveUDPAddr("udp", answer.addr); e == nil {
 				rtpBridge.mu.Lock()
 				rtpBridge.remote = addr
 				rtpBridge.mu.Unlock()
@@ -1146,16 +1193,21 @@ func getLocalIP() string {
 }
 
 func buildSIPSDP(localIP string, rtpPort int) string {
-	return fmt.Sprintf(`v=0
-o=AstraCalls 0 0 IN IP4 %s
-s=AstraCalls SIP Gateway
-c=IN IP4 %s
-t=0 0
-m=audio %d RTP/AVP 0
-a=rtpmap:0 PCMU/8000
-a=ptime:20
-a=sendrecv
-`, localIP, localIP, rtpPort)
+	return fmt.Sprintf(
+		"v=0\r\n"+
+			"o=WASIPRelay 0 0 IN IP4 %s\r\n"+
+			"s=WA SIP Relay\r\n"+
+			"c=IN IP4 %s\r\n"+
+			"t=0 0\r\n"+
+			"m=audio %d RTP/AVP 0 8 101\r\n"+
+			"a=rtpmap:0 PCMU/8000\r\n"+
+			"a=rtpmap:8 PCMA/8000\r\n"+
+			"a=rtpmap:101 telephone-event/8000\r\n"+
+			"a=fmtp:101 0-16\r\n"+
+			"a=ptime:20\r\n"+
+			"a=sendrecv\r\n",
+		localIP, localIP, rtpPort,
+	)
 }
 
 // dialogTag devolve a tag de um cabeçalho From/To (vazio se não houver).

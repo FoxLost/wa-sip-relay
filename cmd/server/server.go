@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
@@ -42,6 +43,13 @@ func newServer(ctx context.Context, pgURL, pgNamespace, staticDir string, maxCal
 
 	broker := NewBroker()
 	mgr := newSessionManager(ctx, provider, broker, store, waLogger, log, maxCalls)
+	broker.OnCallEnded = func(record CallRecord) {
+		persistCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := store.appendCallHistory(persistCtx, record); err != nil {
+			log.Error("persist call history", "session", record.SessionID, "call_id", record.CallID, "err", err)
+		}
+	}
 	broker.SessionsFn = mgr.infos
 	broker.AccountForSession = mgr.accountIDForSession
 	broker.HostForSession = mgr.hostForSession

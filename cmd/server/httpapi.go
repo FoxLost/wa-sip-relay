@@ -12,7 +12,6 @@ import (
 	"wacalls/internal/voip/core"
 	"wacalls/internal/voip/media"
 
-	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -20,259 +19,31 @@ func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/config", s.handleConfig)
-	// Credencial de widget para quem tem a chave-mestra (não entram em widgetAllowed,
-	// então SÓ a chave-mestra acessa). widget-key = estática por instância; widget-tokens
-	// = token efêmero escopado por conta (recomendado).
-	mux.HandleFunc("GET /api/widget-key", s.handleWidgetKey)
-	mux.HandleFunc("POST /api/widget-tokens", s.handleWidgetToken)
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls", s.handleSessionCalls)
-	mux.HandleFunc("GET /api/sessions/{sid}/restriction-status", s.handleRestrictionStatus)
-	mux.HandleFunc("GET /api/sessions/{sid}/capping", s.handleMessageCapping)
 	mux.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)
 	mux.HandleFunc("POST /api/sessions/{sid}/logout", s.handleSessionLogout)
 	mux.HandleFunc("POST /api/sessions/{sid}/pair", s.handleSessionPair)
 	mux.HandleFunc("POST /api/sessions/{sid}/pair-code", s.handleSessionPairCode)
 	mux.HandleFunc("POST /api/sessions/{sid}/pair-passkey", s.handlePairPasskey)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls", s.handleStartCall)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/fake", s.handleFakeCall)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/group", s.handleStartGroupCall)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/group/end", s.handleEndGroupCall)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/group/ws", s.handleGroupWSBridge)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/group/video-ws", s.handleGroupVideoWS)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/group/roster", s.handleGroupRoster)
+	mux.HandleFunc("GET /api/sessions/{sid}/calls", s.handleSessionCalls)
+	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
 
-	// Gateway SIP (modelo Wavoip): status global e credenciais por sessão.
 	mux.HandleFunc("GET /api/sip/status", s.handleSIPStatus)
 	mux.HandleFunc("GET /api/sessions/{sid}/sip", s.handleSIPConfig)
 	mux.HandleFunc("POST /api/sessions/{sid}/sip", s.handleSIPConfig)
 	mux.HandleFunc("GET /api/sessions/{sid}/sip-ext", s.handleSIPExtConfig)
 	mux.HandleFunc("POST /api/sessions/{sid}/sip-ext", s.handleSIPExtConfig)
-	mux.HandleFunc("GET /api/sessions/{sid}/sip-agent", s.handleSIPAgentConfig)
-	mux.HandleFunc("POST /api/sessions/{sid}/sip-agent", s.handleSIPAgentConfig)
 
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/webrtc", s.handleWebRTC)
-	// Rota WebSocket de mídia — funciona atrás de proxy reverso HTTP (Cloudflare etc.)
-	// O browser envia/recebe PCM Int16 LE 16 kHz via WSS/443 em vez de WebRTC/UDP.
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/{id}/ws", s.handleWSBridge)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/accept", s.handleAccept)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/reject", s.handleReject)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/video/{action}", s.handleCallVideo)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/hold", s.handleHold)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/resume", s.handleResume)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/mute", s.handleCallMute)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/hand", s.handleCallHand)
-	// espiar (escuta em tempo real), volume e silenciar o toque — ver spy.go
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/spy", s.handleSpyWebRTC)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/{id}/spy", s.handleSpyList)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/{id}/spy/ws", s.handleSpyWS)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}/spy/{spyId}", s.handleSpyDelete)
-	mux.HandleFunc("GET /api/sessions/{sid}/calls/{id}/volume", s.handleCallVolume)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/volume", s.handleCallVolume)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/silence", s.handleCallSilence)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/transfer", s.handleTransfer)
-	mux.HandleFunc("POST /api/sessions/{sid}/calls/{id}/pickup", s.handlePickup)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/calls/{id}", s.handleEndCall)
-	mux.HandleFunc("GET /api/sessions/{sid}/history", s.handleHistory)
+	mux.HandleFunc("GET /api/sessions/{sid}/phonebook", s.handlePhonebookConfig)
+	mux.HandleFunc("GET /phonebook/{sid}/grandstream.xml", s.handleGrandstreamPhonebook)
+	mux.HandleFunc("GET /phonebook/{sid}/contacts.vcf", s.handleVCardPhonebook)
+	mux.HandleFunc("GET /phonebook/{sid}/contacts.json", s.handleJSONPhonebook)
 
-	// Mensageria (whatsmeow)
-	mux.HandleFunc("GET /api/sessions/{sid}/messages/new-message-id", s.handleNewMessageID)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/text", s.handleSendText)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/disappearing", s.handleSendDisappearing)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/image", s.handleSendImage)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/audio", s.handleSendAudio)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/video", s.handleSendVideo)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/ptv", s.handleSendPtv)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/forward", s.handleForward)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/buttons", s.handleSendButtons)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/list", s.handleSendList)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/interactive", s.handleSendInteractive)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/carousel", s.handleSendCarousel)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/catalog", s.handleSendCatalog)
-	mux.HandleFunc("POST /api/sessions/{sid}/meta-ai", s.handleMetaAI)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/form", s.handleSendForm)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/native-form", s.handleSendNativeForm)
-	mux.HandleFunc("GET /api/sessions/{sid}/native-forms", s.handleListNativeForms)
-	mux.HandleFunc("POST /api/sessions/{sid}/schedule", s.handleSchedule)
-	mux.HandleFunc("GET /api/sessions/{sid}/schedule", s.handleListScheduled)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/schedule/{id}", s.handleCancelScheduled)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/document", s.handleSendDocument)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/sticker", s.handleSendSticker)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/location", s.handleSendLocation)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/contact", s.handleSendContact)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/poll", s.handleSendPoll)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/pix", s.handleSendPix)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/product", s.handleSendProduct)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/product-native", s.handleSendProductNative)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/link-preview", s.handleSendLinkPreview)
-	mux.HandleFunc("PUT /api/sessions/{sid}/messages/react", s.handleReact)
-	mux.HandleFunc("PUT /api/sessions/{sid}/messages/edit", s.handleEditMessage)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/messages", s.handleDeleteMessage)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/seen", s.handleMarkSeen)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/typing", s.handleTyping)
-	// Baixar os bytes de uma mídia RECEBIDA (imagem/áudio/vídeo/documento/sticker)
-	mux.HandleFunc("GET /api/sessions/{sid}/messages/{id}/media", s.handleGetMedia)
-
-	// Contatos (whatsmeow)
-	mux.HandleFunc("GET /api/sessions/{sid}/contacts/check", s.handleCheckNumber)
-	mux.HandleFunc("GET /api/sessions/{sid}/contacts", s.handleListContacts)
-	mux.HandleFunc("GET /api/sessions/{sid}/contacts/{jid}", s.handleContactInfo)
-	mux.HandleFunc("GET /api/sessions/{sid}/contacts/{jid}/picture", s.handleContactPicture)
-	mux.HandleFunc("POST /api/sessions/{sid}/contacts/{jid}/block", s.handleBlock(true))
-	mux.HandleFunc("POST /api/sessions/{sid}/contacts/{jid}/unblock", s.handleBlock(false))
-	mux.HandleFunc("GET /api/sessions/{sid}/blocklist", s.handleBlocklist)
-
-	// Grupos (whatsmeow)
-	mux.HandleFunc("POST /api/sessions/{sid}/communities", s.handleCreateCommunity)
-	mux.HandleFunc("GET /api/sessions/{sid}/communities", s.handleListCommunities)
-	mux.HandleFunc("GET /api/sessions/{sid}/communities/{cid}", s.handleCommunityInfo)
-	mux.HandleFunc("GET /api/sessions/{sid}/communities/{cid}/groups", s.handleCommunityGroups)
-	mux.HandleFunc("POST /api/sessions/{sid}/communities/{cid}/groups", s.handleCommunityCreateGroup)
-	mux.HandleFunc("POST /api/sessions/{sid}/communities/{cid}/groups/link", s.handleCommunityLink(true))
-	mux.HandleFunc("POST /api/sessions/{sid}/communities/{cid}/groups/unlink", s.handleCommunityLink(false))
-	mux.HandleFunc("GET /api/sessions/{sid}/communities/{cid}/participants", s.handleCommunityParticipants)
-	mux.HandleFunc("POST /api/sessions/{sid}/communities/{cid}/participants/add", s.handleCommunityAddParticipants)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups", s.handleCreateGroup)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups", s.handleListGroups)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/join", s.handleJoinGroup)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups/join-info", s.handleGroupJoinInfo)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups/{gid}", s.handleGroupInfo)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/leave", s.handleLeaveGroup)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/status", s.handleGroupStatus)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups/{gid}/participants", s.handleGroupParticipants)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/history/share", s.handleGroupHistoryShare)
-	mux.HandleFunc("GET /api/sessions/{sid}/abprops", s.handleABProps)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/participants/add", s.handleGroupParticipantChange(whatsmeow.ParticipantChangeAdd))
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/participants/remove", s.handleGroupParticipantChange(whatsmeow.ParticipantChangeRemove))
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/participants/promote", s.handleGroupParticipantChange(whatsmeow.ParticipantChangePromote))
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/participants/demote", s.handleGroupParticipantChange(whatsmeow.ParticipantChangeDemote))
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/subject", s.handleGroupSubject)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/description", s.handleGroupDescription)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/picture", s.handleGroupPicture)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups/{gid}/invite", s.handleGroupInvite)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/invite/revoke", s.handleGroupInviteRevoke)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/settings/announce", s.handleGroupAnnounce)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/settings/locked", s.handleGroupLocked)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/settings/approval", s.handleGroupApprovalMode)
-	mux.HandleFunc("PUT /api/sessions/{sid}/groups/{gid}/settings/add-mode", s.handleGroupAddMode)
-	mux.HandleFunc("GET /api/sessions/{sid}/groups/{gid}/requests", s.handleGroupRequests)
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/requests/approve", s.handleGroupRequestChange(whatsmeow.ParticipantChangeApprove))
-	mux.HandleFunc("POST /api/sessions/{sid}/groups/{gid}/requests/reject", s.handleGroupRequestChange(whatsmeow.ParticipantChangeReject))
-
-	// Canais / Newsletters (whatsmeow)
-	mux.HandleFunc("GET /api/sessions/{sid}/channels", s.handleListChannels)
-	mux.HandleFunc("GET /api/sessions/{sid}/channels/{id}", s.handleChannelInfo)
-	mux.HandleFunc("GET /api/sessions/{sid}/channels/{id}/messages", s.handleChannelMessages)
-	mux.HandleFunc("POST /api/sessions/{sid}/channels/{id}/follow", s.handleChannelFollow(true))
-	mux.HandleFunc("POST /api/sessions/{sid}/channels/{id}/unfollow", s.handleChannelFollow(false))
-	mux.HandleFunc("POST /api/sessions/{sid}/channels/{id}/mute", s.handleChannelMute(true))
-	mux.HandleFunc("POST /api/sessions/{sid}/channels/{id}/unmute", s.handleChannelMute(false))
-
-	// Presença
-	mux.HandleFunc("POST /api/sessions/{sid}/presence", s.handleSetPresence)
-	mux.HandleFunc("POST /api/sessions/{sid}/presence/{jid}/subscribe", s.handleSubscribePresence)
-
-	// Perfil próprio
-	mux.HandleFunc("GET /api/sessions/{sid}/profile", s.handleGetProfile)
-	mux.HandleFunc("PUT /api/sessions/{sid}/profile/status", s.handleSetProfileStatus)
-	mux.HandleFunc("GET /api/sessions/{sid}/profile/qr", s.handleContactQR)
-
-	// Privacidade da conta
-	mux.HandleFunc("GET /api/sessions/{sid}/privacy", s.handleGetPrivacy)
-	mux.HandleFunc("PUT /api/sessions/{sid}/privacy", s.handleSetPrivacy)
-	mux.HandleFunc("GET /api/sessions/{sid}/privacy/status", s.handleGetStatusPrivacy)
-
-	// Mensagens temporárias (disappearing)
-	mux.HandleFunc("PUT /api/sessions/{sid}/disappearing", s.handleSetDefaultDisappearing)
-	mux.HandleFunc("PUT /api/sessions/{sid}/chats/{chatId}/disappearing", s.handleSetChatDisappearing)
-
-	// Perfil comercial (business) de um contato
-	mux.HandleFunc("GET /api/sessions/{sid}/contacts/{jid}/business", s.handleBusinessProfile)
-
-	// Status / Stories
-	mux.HandleFunc("POST /api/sessions/{sid}/status/text", s.handleStatusText)
-	mux.HandleFunc("POST /api/sessions/{sid}/status/image", s.handleStatusImage)
-	mux.HandleFunc("POST /api/sessions/{sid}/status/video", s.handleStatusVideo)
-	mux.HandleFunc("POST /api/sessions/{sid}/status/audio", s.handleStatusAudio)
-
-	// Histórico de conversas/mensagens
-	mux.HandleFunc("GET /api/sessions/{sid}/chats", s.handleListChats)
-	mux.HandleFunc("GET /api/sessions/{sid}/chats/{chatId}/messages", s.handleChatMessages)
-	mux.HandleFunc("GET /api/sessions/{sid}/messages/search", s.handleSearchMessages)
-	mux.HandleFunc("GET /api/sessions/{sid}/messages", s.handleQueryMessages)
-
-	// Webhook por sessão (recebimento -> Chatwoot etc.)
-	mux.HandleFunc("POST /api/sessions/{sid}/webhook", s.handleSetWebhook)
-	mux.HandleFunc("GET /api/sessions/{sid}/webhook", s.handleGetWebhook)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/webhook", s.handleDeleteWebhook)
-
-	// Integração Chatwoot por sessão
-	mux.HandleFunc("POST /api/sessions/{sid}/chatwoot", s.handleSetChatwoot)
-	mux.HandleFunc("GET /api/sessions/{sid}/chatwoot", s.handleGetChatwoot)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/chatwoot", s.handleDeleteChatwoot)
-	mux.HandleFunc("POST /api/sessions/{sid}/chatwoot/webhook", s.handleChatwootWebhook)
-	mux.HandleFunc("POST /api/sessions/{sid}/chatwoot/import-history", s.handleImportHistoryNow)
-	mux.HandleFunc("GET /api/chatwoot/resolve", s.handleChatwootResolve)
-	// Abrir sob demanda uma conversa de grupo/canal no Chatwoot
-	mux.HandleFunc("POST /api/sessions/{sid}/chatwoot/groups/{gid}/open", s.handleChatwootOpenGroup)
-	mux.HandleFunc("POST /api/sessions/{sid}/chatwoot/channels/{id}/open", s.handleChatwootOpenChannel)
-
-	// Gravação de chamadas (opt-in por sessão)
-	mux.HandleFunc("GET /api/sessions/{sid}/recording", s.handleGetRecording)
-	mux.HandleFunc("PUT /api/sessions/{sid}/recording", s.handleSetRecording)
-	// Proxy de saída por sessão (http/https/socks5)
-	mux.HandleFunc("GET /api/sessions/{sid}/proxy", s.handleGetProxy)
-	mux.HandleFunc("PUT /api/sessions/{sid}/proxy", s.handleSetProxy)
-	// Votar numa enquete recebida
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/poll-vote", s.handlePollVote)
-	// Responder (RSVP) um evento recebido
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/event", s.handleSendEvent)
-	// Disparo (blast) com pacing anti-ban.
-	mux.HandleFunc("POST /api/sessions/{sid}/blast", s.handleBlast)
-	mux.HandleFunc("GET /api/sessions/{sid}/blasts", s.handleBlastList)
-	mux.HandleFunc("GET /api/sessions/{sid}/blasts/{id}", s.handleBlastGet)
-	mux.HandleFunc("POST /api/sessions/{sid}/blasts/{id}/cancel", s.handleBlastCancel)
-	mux.HandleFunc("POST /api/sessions/{sid}/messages/event-response", s.handleEventResponse)
-	// Disparo em massa de ligações com áudio pré-gravado
-	mux.HandleFunc("POST /api/sessions/{sid}/broadcast", s.handleBroadcast)
-	mux.HandleFunc("GET /api/sessions/{sid}/broadcast/{cid}", s.handleBroadcastStatus)
-	// MP3 finalizado — rota pública (fora de /api/, sem API key): o id é
-	// não-enumerável e atua como capability.
-	mux.HandleFunc("GET /recordings/{id}", s.handleRecording)
-
-	// Formulários (webview) — rotas PÚBLICAS (fora de /api/): o celular do
-	// cliente abre a webview sem API key; o token assinado é a capability.
-	mux.HandleFunc("GET /forms/{token}", s.handleFormPage)
-	mux.HandleFunc("POST /forms/{token}/submit", s.handleFormSubmit)
-
-	// Observabilidade (aditivo, sem auth — fora de /api/): probes + métricas.
+	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("GET /livez", s.handleLivez)
 	mux.HandleFunc("GET /readyz", s.handleLivez)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
-
-	mux.HandleFunc("GET /api/events", s.handleEvents)
-
-	// MCP (Model Context Protocol) para agentes de IA: ver mcp.go. /api/mcp usa a
-	// chave-mestra; /mcp e /mcp/{key} usam as chaves por sessão (mcpkeys.go).
-	mux.HandleFunc("/api/mcp", s.handleMCP)
-	mux.HandleFunc("/mcp", s.handleMCPScoped)
-	mux.HandleFunc("/mcp/{key}", s.handleMCPScoped)
-	mux.HandleFunc("GET /api/sessions/{sid}/mcp-keys", s.handleListMCPKeys)
-	mux.HandleFunc("POST /api/sessions/{sid}/mcp-keys", s.handleCreateMCPKey)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/mcp-keys/{kid}", s.handleDeleteMCPKey)
-
-	// Confiabilidade de entrega do webhook de sessão (circuit breaker + DLQ).
-	mux.HandleFunc("GET /api/sessions/{sid}/webhooks/status", s.handleWebhookStatus)
-	mux.HandleFunc("GET /api/sessions/{sid}/webhooks/dlq", s.handleWebhookDLQ)
-	mux.HandleFunc("POST /api/sessions/{sid}/webhooks/dlq/{id}/replay", s.handleWebhookDLQReplay)
-	mux.HandleFunc("POST /api/sessions/{sid}/webhooks/reenable", s.handleWebhookReenable)
-	// Vários webhooks por sessão (o "default" é o mesmo da rota /webhook acima).
-	mux.HandleFunc("GET /api/sessions/{sid}/webhooks", s.handleListWebhooks)
-	mux.HandleFunc("POST /api/sessions/{sid}/webhooks", s.handleCreateWebhook)
-	mux.HandleFunc("PUT /api/sessions/{sid}/webhooks/{wid}", s.handleUpdateWebhook)
-	mux.HandleFunc("DELETE /api/sessions/{sid}/webhooks/{wid}", s.handleDeleteWebhookByID)
-	mux.HandleFunc("POST /api/sessions/{sid}/webhooks/{wid}/test", s.handleTestWebhook)
 
 	if s.staticDir != "" {
 		if _, err := os.Stat(s.staticDir); err == nil {
@@ -282,9 +53,7 @@ func (s *server) routes() http.Handler {
 	s.apiMux = mux
 	var handler http.Handler = mux
 	if key := os.Getenv("WACALLS_API_KEY"); key != "" {
-		handler = withAuth(handler, key, os.Getenv("WACALLS_WIDGET_KEY"), func(sid string) (int, int) {
-			return s.sessions.accountIDForSession(sid), s.sessions.inboxIDForSession(sid)
-		})
+		handler = withAuth(handler, key, "", nil)
 	}
 	return withCORS(handler)
 }
@@ -859,9 +628,16 @@ func (s *server) handlePickup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
-	if sess := s.sessionByID(w, r.PathValue("sid")); sess != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"rows": s.broker.historyRows(sess.id, 50)})
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
 	}
+	rows, err := s.sessions.store.listCallHistory(r.Context(), sess.id, 50)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows})
 }
 
 func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Request) {

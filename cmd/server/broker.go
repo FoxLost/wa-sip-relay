@@ -101,10 +101,11 @@ type sessionScope struct {
 }
 
 type Broker struct {
-	mu      sync.RWMutex
-	subs    map[*subscriber]struct{}
-	calls   map[string]*CallRecord
-	history []CallRecord
+	mu          sync.RWMutex
+	subs        map[*subscriber]struct{}
+	calls       map[string]*CallRecord
+	history     []CallRecord
+	OnCallEnded func(CallRecord)
 
 	// SessionsFn lista as sessões para o retrato inicial do SSE (filtrado por escopo).
 	SessionsFn func() []SessionInfo
@@ -399,6 +400,10 @@ func (b *Broker) endCall(id, reason string) {
 	owner := c.Owner
 	sessionID := c.SessionID
 	b.mu.Unlock()
+
+	if b.OnCallEnded != nil {
+		b.OnCallEnded(ended)
+	}
 
 	b.broadcastForSession(sessionID, map[string]any{
 		"type": "call-ended", "sessionId": sessionID, "id": id, "owner": owner, "reason": reason, "endedAt": now,

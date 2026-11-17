@@ -286,6 +286,21 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 
 	if sendPreaccept {
 		_ = m.sock.SendNode(ctx, signaling.BuildPreacceptStanza(peer, callID, creator))
+		relayLatencies := make([]signaling.RelayLatencyEntry, 0, len(endpoints))
+		for _, ep := range endpoints {
+			latency := 40
+			if ep.C2RRtt != nil {
+				latency = *ep.C2RRtt
+			}
+			relayLatencies = append(relayLatencies, signaling.RelayLatencyEntry{
+				RelayName: ep.RelayName, Latency: latency, AddressBytes: ep.AddressBytes,
+			})
+		}
+		if err := m.sock.SendNode(ctx, signaling.BuildRelayLatencyStanza(
+			peer, callID, creator, relayLatencies, m.calleeDevices,
+		)); err != nil {
+			m.log.Warn("send relay latency", "call_id", callID, "err", err)
+		}
 	}
 	m.connectRelays(endpoints)
 }

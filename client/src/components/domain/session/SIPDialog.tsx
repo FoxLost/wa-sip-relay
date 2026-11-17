@@ -37,18 +37,13 @@ const emptyExt: SIPExtConfig = {
   agentAutoAnswer: false,
 };
 
-const inboundModes: { value: NonNullable<SIPExtConfig["inboundMode"]>; label: string; hint: string }[] = [
-  { value: "originate", label: "Discar no WhatsApp", hint: "O PBX manda o número de destino e a chamada sai pelo WhatsApp (padrão)." },
-  { value: "agent", label: "Atender com o agente de voz", hint: "Quem liga para o ramal é atendido pelo agente (evento incoming + WS de áudio)." },
-  { value: "auto", label: "Automático", hint: "Ligou para o próprio ramal: agente. Ligou para outro número: disca no WhatsApp." },
-];
 
 const StatusBadge = ({ status, error }: { status?: string; error?: string }) => {
   if (!status) return null;
   const map: Record<string, { label: string; cls: string }> = {
-    registered: { label: "Registrado", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
-    registering: { label: "Registrando…", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
-    failed: { label: "Falhou", cls: "bg-red-500/15 text-red-600 border-red-500/30" },
+    registered: { label: "Registered", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
+    registering: { label: "Registering…", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
+    failed: { label: "Failed", cls: "bg-red-500/15 text-red-600 border-red-500/30" },
   };
   const s = map[status] ?? { label: status, cls: "" };
   return (
@@ -64,7 +59,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
   const [showPass, setShowPass] = useState(false);
   const [copied, setCopied] = useState<Field | null>(null);
 
-  // Modelo 1 (servidor): credenciais que o PBX do cliente usa para registrar aqui.
+  // Direct mode: the phone or customer PBX registers with this relay.
   const sipUser = session.sip_user || "";
   const sipPass = session.sip_pass || "";
   const server =
@@ -73,7 +68,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       : `${window.location.hostname}:${SIP_PORT}`;
   const domain = server.split(":")[0];
 
-  // Modelo 2 (externo): esta sessão se registra num PBX do cliente.
+  // External mode: this relay registers with the customer's PBX.
   const [ext, setExt] = useState<SIPExtConfig>({ ...emptyExt });
   const [busy, setBusy] = useState(false);
   const [showExtPass, setShowExtPass] = useState(false);
@@ -96,7 +91,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
 
   const saveExt = async () => {
     if (ext.enabled && (!ext.host.trim() || !ext.user.trim())) {
-      toast.error("Preencha host e usuário do PBX");
+      toast.error("Enter the PBX host and username");
       return;
     }
     setBusy(true);
@@ -114,7 +109,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
         agentAutoAnswer: !!ext.agentAutoAnswer,
         agentRingTimeoutSeconds: ext.agentRingTimeoutSeconds,
       });
-      toast.success(ext.enabled ? "Registro no PBX salvo — conectando…" : "Registro no PBX desativado");
+      toast.success(ext.enabled ? "PBX registration saved — connecting…" : "PBX registration disabled");
       setOpen(false);
     } catch (e) {
       toast.error((e as Error).message);
@@ -128,7 +123,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       <Label>{label}</Label>
       <div className="flex gap-2">
         <Input readOnly value={value} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
-        <Button type="button" variant="outline" size="icon" onClick={() => copy(field, value)} aria-label={`Copiar ${label}`}>
+        <Button type="button" variant="outline" size="icon" onClick={() => copy(field, value)} aria-label={`Copy ${label}`}>
           {copied === field ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         </Button>
       </div>
@@ -159,33 +154,33 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Integração SIP / PBX</DialogTitle>
+          <DialogTitle>SIP / PBX integration</DialogTitle>
           <DialogDescription>
-            Duas formas de integrar esta sessão a um PBX/softphone. Escolha uma das abas abaixo.
+            Choose whether phones register with this relay or the relay registers with an external PBX.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex gap-1 rounded-full bg-muted p-1">
           <TabButton id="server" icon={<Server className="h-3.5 w-3.5" />}>
-            PBX registra aqui
+            PBX registers here
           </TabButton>
           <TabButton id="external" icon={<ArrowUpRight className="h-3.5 w-3.5" />}>
-            Registrar em PBX
+            Register with PBX
           </TabButton>
         </div>
 
         {tab === "server" ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              O PBX/softphone do cliente <b>se registra neste servidor</b> com as credenciais abaixo.
-              Chamadas discadas pelo tronco saem pelo WhatsApp desta sessão.
+              The phone, softphone, or PBX <b>registers with this relay</b> using the credentials below.
+              Numbers dialed through this account are sent to WhatsApp.
             </p>
-            <Row label="Servidor SIP (host:porta)" field="server" value={server} />
-            <Row label="Domínio / Realm" field="domain" value={domain} />
-            <Row label="Usuário SIP" field="user" value={sipUser} />
+            <Row label="SIP server (host:port)" field="server" value={server} />
+            <Row label="Domain / realm" field="domain" value={domain} />
+            <Row label="SIP username" field="user" value={sipUser} />
 
             <div className="space-y-1">
-              <Label>Senha SIP</Label>
+              <Label>SIP password</Label>
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -199,7 +194,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                   variant="outline"
                   size="icon"
                   onClick={() => setShowPass((v) => !v)}
-                  aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                  aria-label={showPass ? "Hide password" : "Show password"}
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
@@ -208,7 +203,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                   variant="outline"
                   size="icon"
                   onClick={() => copy("pass", sipPass)}
-                  aria-label="Copiar senha"
+                  aria-label="Copy password"
                 >
                   {copied === "pass" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
@@ -216,12 +211,12 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Como configurar</p>
+              <p className="font-medium text-foreground">Phone or PBX setup</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                <li>Transporte: <b>UDP</b> (porta {SIP_PORT}), codec <b>G.711 u-law (PCMU)</b>.</li>
-                <li>No FreePBX: crie um <b>Trunk PJSIP</b> com Username = Usuário SIP e SIP Server = host acima.</li>
-                <li>Disque o número no formato internacional (ex.: 5511999999999).</li>
-                <li>Mantenha estas credenciais em sigilo — dão acesso a fazer chamadas por esta sessão.</li>
+                <li>Transport: <b>UDP</b> on port {SIP_PORT}; codec: <b>G.711 PCMU or PCMA</b>.</li>
+                <li>On FreePBX, create a <b>PJSIP trunk</b> with the SIP username and server shown above.</li>
+                <li>Dial international numbers without a plus sign, for example 15551234567.</li>
+                <li>Keep these credentials private; they authorize calls through this WhatsApp account.</li>
               </ul>
             </div>
           </div>
@@ -229,9 +224,9 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-md border border-border p-3">
               <div>
-                <p className="text-sm font-medium">Registrar em PBX externo</p>
+                <p className="text-sm font-medium">Register with an external PBX</p>
                 <p className="text-xs text-muted-foreground">
-                  O AstraCalls vira um <b>ramal registrado</b> no seu Asterisk/FreePBX.
+                  WA SIP Relay becomes a <b>registered extension</b> on Asterisk, FreePBX, 3CX, or another SIP PBX.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -246,16 +241,16 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
 
             <div className="grid grid-cols-[1fr_6rem] gap-2">
               <div className="space-y-1">
-                <Label>Host do PBX</Label>
+                <Label>PBX host</Label>
                 <Input
                   value={ext.host}
                   onChange={(e) => setE("host", e.target.value)}
-                  placeholder="pbx.suaempresa.com"
+                  placeholder="pbx.example.com"
                   disabled={!ext.enabled}
                 />
               </div>
               <div className="space-y-1">
-                <Label>Porta</Label>
+                <Label>Port</Label>
                 <Input
                   value={String(ext.port)}
                   onChange={(e) => setE("port", Number(e.target.value.replace(/\D/g, "")) || 0)}
@@ -267,22 +262,22 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="space-y-1">
-              <Label>Proxy (outbound proxy) — opcional</Label>
+              <Label>Outbound proxy — optional</Label>
               <Input
                 value={ext.proxy ?? ""}
                 onChange={(e) => setE("proxy", e.target.value)}
-                placeholder="ex.: sip.provedor.com:5060 (deixe vazio p/ usar o host)"
+                placeholder="For example sip.provider.com:5060; blank uses the PBX host"
                 disabled={!ext.enabled}
               />
               <p className="text-[0.7rem] text-muted-foreground">
-                Para onde enviar o registro/chamadas quando o <b>domínio</b> (host acima) for
-                diferente do <b>servidor</b> — comum em FreePBX e troncos hospedados.
+                Set this when SIP messages must be sent to a server other than the PBX domain. This is
+                common with hosted trunks and some FreePBX deployments.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Usuário / Ramal</Label>
+                <Label>Username / extension</Label>
                 <Input
                   value={ext.user}
                   onChange={(e) => setE("user", e.target.value)}
@@ -292,14 +287,14 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Senha</Label>
+                <Label>Password</Label>
                 <div className="flex gap-2">
                   <Input
                     value={ext.pass}
                     onChange={(e) => setE("pass", e.target.value)}
                     type={showExtPass ? "text" : "password"}
                     autoComplete="new-password"
-                    placeholder="senha do ramal"
+                    placeholder="Extension password"
                     disabled={!ext.enabled}
                   />
                   <Button
@@ -307,7 +302,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                     variant="outline"
                     size="icon"
                     onClick={() => setShowExtPass((v) => !v)}
-                    aria-label={showExtPass ? "Ocultar senha" : "Mostrar senha"}
+                    aria-label={showExtPass ? "Hide password" : "Show password"}
                   >
                     {showExtPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
@@ -316,73 +311,43 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="space-y-1">
-              <Label>Usuário de autenticação (Auth ID) — opcional</Label>
+              <Label>Authentication username (Auth ID) — optional</Label>
               <Input
                 value={ext.authUser ?? ""}
                 onChange={(e) => setE("authUser", e.target.value)}
                 autoComplete="off"
-                placeholder="deixe vazio p/ usar o ramal"
+                placeholder="Leave blank to use the extension"
                 disabled={!ext.enabled}
               />
               <p className="text-[0.7rem] text-muted-foreground">
-                Preencha quando o PBX autentica com um ID diferente do ramal — no <b>3CX</b> é o
-                <b> Authentication ID</b> do ramal (a senha é a <b>Authentication Password</b>).
+                Use this when the PBX authenticates with an ID different from the extension. On <b>3CX</b>,
+                enter the extension's <b>Authentication ID</b> here.
               </p>
             </div>
 
             <div className="space-y-1">
-              <Label>Ramal/destino para chamadas recebidas (opcional)</Label>
+              <Label>Destination for incoming WhatsApp calls — optional</Label>
               <Input
                 value={ext.dest}
                 onChange={(e) => setE("dest", e.target.value)}
-                placeholder="ex.: 600 (fila/ramal que toca quando chega chamada no WhatsApp)"
+                placeholder="For example 600 for a queue or extension"
                 disabled={!ext.enabled}
               />
             </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="sip-inbound-mode">Chamada que chega no ramal</Label>
-              <select
-                id="sip-inbound-mode"
-                value={ext.inboundMode ?? "originate"}
-                onChange={(e) => setE("inboundMode", e.target.value as SIPExtConfig["inboundMode"])}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                {inboundModes.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[0.7rem] text-muted-foreground">
-                {inboundModes.find((m) => m.value === (ext.inboundMode ?? "originate"))?.hint}
-              </p>
-            </div>
-
-            {(ext.inboundMode ?? "originate") !== "originate" ? (
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm">Atender na hora</p>
-                  <p className="text-[0.7rem] text-muted-foreground">
-                    Responde 200 OK sem esperar o POST /accept da ponte do agente.
-                  </p>
-                </div>
-                <Switch checked={!!ext.agentAutoAnswer} onCheckedChange={(v) => setE("agentAutoAnswer", v)} />
-              </div>
-            ) : null}
 
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Como funciona</p>
+              <p className="font-medium text-foreground">How it works</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                <li>Crie um <b>ramal</b> no seu PBX e ponha usuário/senha dele aqui.</li>
+                <li>Create an <b>extension</b> on the PBX and enter its credentials here.</li>
                 <li>
-                  <b>PBX → WhatsApp:</b> no dialplan, mande a chamada para este ramal com o número de
-                  destino no formato internacional (ex.: 5511999999999).
+                  <b>PBX → WhatsApp:</b> route the call to this extension with the destination in
+                  international format, for example 15551234567.
                 </li>
                 <li>
-                  <b>WhatsApp → PBX:</b> chamadas recebidas tocam no ramal/fila do campo acima.
+                  <b>WhatsApp → PBX:</b> incoming calls ring the destination configured above.
                 </li>
-                <li>Codec <b>G.711 (PCMU ou PCMA)</b>, transporte UDP.</li>
+                <li>Codec: <b>G.711 PCMU or PCMA</b>; transport: UDP.</li>
               </ul>
             </div>
           </div>
@@ -392,7 +357,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
           <DialogFooter>
             <Button disabled={busy} onClick={() => void saveExt()}>
               {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              Salvar
+              Save
             </Button>
           </DialogFooter>
         ) : null}

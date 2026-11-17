@@ -213,3 +213,65 @@ func TestLateRejectFromNonAnsweringDeviceKeepsCall(t *testing.T) {
 		t.Fatal("terminate do device que atendeu deve encerrar a chamada")
 	}
 }
+
+func TestOfferAckAdvertisesRelayLatency(t *testing.T) {
+	primary := lidDevice("62440234549366", 0)
+	companion := lidDevice("62440234549366", 33)
+	sock := &deviceSock{devices: []types.JID{primary, companion}}
+	m := ringingManager(sock, []types.JID{primary, companion})
+
+	m.HandleCallAck(context.Background(), &waBinary.Node{
+		Tag:   "ack",
+		Attrs: waBinary.Attrs{"type": "offer"},
+		Content: []waBinary.Node{
+			{
+				Tag: "user",
+				Content: []waBinary.Node{
+					{Tag: "device", Attrs: waBinary.Attrs{"jid": "999:0@lid"}},
+					{Tag: "device", Attrs: waBinary.Attrs{"jid": companion.String()}},
+				},
+			},
+			{
+				Tag: "relay",
+				Content: []waBinary.Node{
+					{Tag: "key", Content: []byte("relay-key")},
+					{Tag: "token", Attrs: waBinary.Attrs{"id": "0"}, Content: []byte{0xaa}},
+					{
+						Tag: "te2",
+						Attrs: waBinary.Attrs{
+							"token_id": "0", "relay_name": "relay-A",
+							"protocol": "0", "c2r_rtt": "7",
+						},
+						Content: []byte{57, 144, 1, 2, 0x0d, 0x96},
+					},
+				},
+			},
+		},
+	})
+
+	for i := range sock.sent {
+		children := wanode.NodeChildren(&sock.sent[i])
+		if len(children) == 0 || children[0].Tag != "relaylatency" {
+			continue
+		}
+		if wanode.AttrString(sock.sent[i].Attrs, "id") == "" {
+			t.Fatal("relaylatency call wrapper must carry an id")
+		}
+		inner := children[0]
+		var foundRelay, foundDestination bool
+		for _, child := range wanode.NodeChildren(&inner) {
+			switch child.Tag {
+			case "te":
+				foundRelay = wanode.AttrString(child.Attrs, "relay_name") == "relay-A" &&
+					wanode.AttrString(child.Attrs, "latency") == "33554439"
+			case "destination":
+				foundDestination = len(wanode.NodeChildren(&child)) == 2
+			}
+		}
+		if !foundRelay || !foundDestination {
+			t.Fatalf("relaylatency missing relay or destination: %#v", inner)
+		}
+		return
+	}
+	t.Fatal("offer ack did not send relaylatency")
+}

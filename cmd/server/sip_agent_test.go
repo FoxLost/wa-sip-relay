@@ -61,6 +61,24 @@ func TestParseSDPOfferAndAnswer(t *testing.T) {
 	}
 }
 
+func TestInboundSIPOfferSupportsGrandstreamG711Codecs(t *testing.T) {
+	offer := buildSIPSDP("192.168.88.22", 40000)
+	for _, want := range []string{
+		"m=audio 40000 RTP/AVP 0 8 101",
+		"a=rtpmap:0 PCMU/8000",
+		"a=rtpmap:8 PCMA/8000",
+		"a=rtpmap:101 telephone-event/8000",
+		"a=fmtp:101 0-16",
+	} {
+		if !strings.Contains(offer, want) {
+			t.Fatalf("inbound offer missing %q:\n%s", want, offer)
+		}
+	}
+	if strings.Contains(strings.ReplaceAll(offer, "\r\n", ""), "\n") {
+		t.Fatalf("inbound offer contains non-CRLF line endings:\n%q", offer)
+	}
+}
+
 func TestResamplersKeepLength(t *testing.T) {
 	var d downsampler16to8
 	total := 0

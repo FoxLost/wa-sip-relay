@@ -70,10 +70,7 @@ ENV CGO_ENABLED=1 \
 # ldflags -> expostos em /api/config e no painel (version ao lado da logo).
 ARG BUILD_VERSION=dev
 ARG BUILD_REV=dev
-RUN go build -tags mlow -ldflags "-X main.version=${BUILD_VERSION} -X main.commit=${BUILD_REV}" -o /wacalls ./cmd/server
-# Conector SIP (PABX IP -> AstraChat): binário separado, Go puro (sem cgo/MLow). Roda
-# como OUTRO serviço da stack trocando o entrypoint (ver README, "Conector SIP").
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${BUILD_VERSION}" -o /sipconnector ./cmd/sipconnector
+RUN go build -tags mlow -ldflags "-X main.version=${BUILD_VERSION} -X main.commit=${BUILD_REV}" -o /wa-sip-relay ./cmd/server
 
 # ---------- Stage 4: runtime enxuto ----------
 FROM debian:bookworm-slim AS runtime
@@ -81,8 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 COPY --from=opus /opt/libopus_mlow.so /usr/local/lib/libopus_mlow.so
 RUN ldconfig
-COPY --from=server /wacalls /usr/local/bin/wacalls
-COPY --from=server /sipconnector /usr/local/bin/sipconnector
+COPY --from=server /wa-sip-relay /usr/local/bin/wa-sip-relay
 COPY --from=client /app/client/dist /app/client/dist
 COPY --from=server /astracalls-passkey.zip /app/client/dist/astracalls-passkey.zip
 WORKDIR /app
@@ -90,6 +86,6 @@ WORKDIR /app
 # único a cada build de release. Injetado via --build-arg BUILD_REV=...
 ARG BUILD_REV=dev
 LABEL org.opencontainers.image.revision=$BUILD_REV
-EXPOSE 8080 50000
-ENTRYPOINT ["wacalls"]
-CMD ["-addr", ":8080", "-static", "/app/client/dist", "-db", "/data/wacalls.db"]
+EXPOSE 8080/tcp 5060/tcp 5060/udp 40000-40049/udp
+ENTRYPOINT ["wa-sip-relay"]
+CMD ["-addr", ":8080", "-static", "/app/client/dist", "-max-calls-per-session", "1"]

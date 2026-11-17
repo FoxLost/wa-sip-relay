@@ -35,6 +35,21 @@ type sessionRow struct {
 
 type sessionStore struct{ db *sql.DB }
 
+const callHistoryDDL = `CREATE TABLE IF NOT EXISTS call_history (
+	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+	call_id TEXT NOT NULL,
+	owner TEXT,
+	direction TEXT NOT NULL,
+	peer TEXT NOT NULL,
+	started_at BIGINT NOT NULL,
+	status TEXT NOT NULL,
+	held BOOLEAN NOT NULL DEFAULT false,
+	ended_at BIGINT,
+	end_reason TEXT,
+	source TEXT,
+	PRIMARY KEY (session_id, call_id)
+)`
+
 // newSessionStore cria a tabela de config das sessões no banco PRINCIPAL.
 // (O store do whatsmeow de cada sessão fica em um banco separado — ver db.go.)
 func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
@@ -74,6 +89,11 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sip_ext_dest TEXT`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sip_ext_proxy TEXT`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sip_ext_opts TEXT`)
+
+	if _, err := db.ExecContext(ctx, callHistoryDDL); err != nil {
+		return nil, err
+	}
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS call_history_session_ended ON call_history (session_id, ended_at DESC, started_at DESC)`)
 
 	// Histórico de mensagens (para as rotas de chats/messages).
 	// O whatsmeow não persiste histórico; guardamos aqui o que passa pela sessão.
@@ -244,6 +264,75 @@ func (s *sessionStore) setRecording(ctx context.Context, id string, on bool) err
 func (s *sessionStore) setProxy(ctx context.Context, id, proxyURL string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET proxy = $1 WHERE id = $2`, proxyURL, id)
 	return err
+}
+
+func (s *sessionStore) appendCallHistory(ctx context.Context, record CallRecord) error {
+	var owner any
+	if record.Owner != nil {
+		owner = *record.Owner
+	}
+	var endedAt any
+	if record.EndedAt != nil {
+		endedAt = *record.EndedAt
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO call_history (
+		session_id, call_id, owner, direction, peer, started_at, status, held, ended_at, end_reason, source
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	ON CONFLICT (session_id, call_id) DO UPDATE SET
+		owner = EXCLUDED.owner,
+		direction = EXCLUDED.direction,
+		peer = EXCLUDED.peer,
+		started_at = EXCLUDED.started_at,
+		status = EXCLUDED.status,
+		held = EXCLUDED.held,
+		ended_at = EXCLUDED.ended_at,
+		end_reason = EXCLUDED.end_reason,
+		source = EXCLUDED.source`,
+		record.SessionID, record.CallID, owner, record.Direction, record.Peer,
+		record.StartedAt, string(record.Status), record.Held, endedAt, record.EndReason, record.Source,
+	)
+	return err
+}
+
+func (s *sessionStore) listCallHistory(ctx context.Context, sessionID string, limit int) ([]CallRecord, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT
+		session_id, call_id, owner, direction, peer, started_at, status, held, ended_at,
+		COALESCE(end_reason, ''), COALESCE(source, '')
+		FROM call_history
+		WHERE session_id = $1
+		ORDER BY ended_at DESC NULLS LAST, started_at DESC
+		LIMIT $2`, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]CallRecord, 0, limit)
+	for rows.Next() {
+		var record CallRecord
+		var owner sql.NullString
+		var endedAt sql.NullInt64
+		if err := rows.Scan(
+			&record.SessionID, &record.CallID, &owner, &record.Direction, &record.Peer,
+			&record.StartedAt, &record.Status, &record.Held, &endedAt,
+			&record.EndReason, &record.Source,
+		); err != nil {
+			return nil, err
+		}
+		if owner.Valid {
+			value := owner.String
+			record.Owner = &value
+		}
+		if endedAt.Valid {
+			value := endedAt.Int64
+			record.EndedAt = &value
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
 }
 
 func (s *sessionStore) delete(ctx context.Context, id string) error {
