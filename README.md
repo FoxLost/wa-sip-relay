@@ -51,21 +51,13 @@ network filesystem.
 - One WhatsApp account dedicated to testing.
 - An IP phone or PBX reachable from the host over the LAN.
 
-The Docker build needs the `opus_mlow` Git submodule. Always clone recursively.
-
 ## Quick start with Docker Compose
 
-### 1. Clone and initialize the project
+### 1. Clone the project
 
 ```bash
-git clone --recurse-submodules https://github.com/FoxLost/wa-sip-relay.git
+git clone https://github.com/FoxLost/wa-sip-relay.git
 cd wa-sip-relay
-```
-
-For an existing clone:
-
-```bash
-git submodule update --init --recursive
 ```
 
 ### 2. Create the runtime configuration
@@ -303,7 +295,6 @@ Source build:
 
 ```bash
 git pull --ff-only
-git submodule update --init --recursive
 docker compose up -d --build
 ```
 
@@ -358,7 +349,6 @@ Check TCP 8080 and confirm the API key is set.
 ## Development
 
 ```bash
-git submodule update --init --recursive
 go test ./cmd/server ./internal/voip/call
 npm --prefix client ci
 npm --prefix client run build
@@ -366,8 +356,8 @@ docker build -t wa-sip-relay:local .
 ```
 
 Live audio requires cgo, the `mlow` build tag, and the native `opus_mlow`
-library. The Dockerfile supplies the reproducible media build for amd64 and
-arm64.
+library. The Dockerfile fetches a pinned codec revision and provides reproducible
+amd64 and arm64 media builds.
 
 ## Security
 

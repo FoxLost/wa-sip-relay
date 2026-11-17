@@ -20,16 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git cmake ninja-build gcc g++ patchelf ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-# Fonte do codec MLow vem do SUBMÓDULO `opus_mlow` (pinado, no contexto de build) —
-# assim o build NÃO depende de acesso ao github em tempo de build (o buildkit deste
-# ambiente não clona github de dentro do build). Fallback: se o submódulo não foi
-# inicializado (clone sem --recurse-submodules), clona no build.
-COPY opus_mlow /build/opus_mlow
-RUN if [ ! -f /build/opus_mlow/CMakeLists.txt ]; then \
-        echo "opus_mlow vazio (submódulo não inicializado) — clonando no build" && \
-        rm -rf /build/opus_mlow && \
-        git clone --depth 1 https://github.com/edgardmessias/opus_mlow.git /build/opus_mlow; \
-    fi
+# Pin the native MLow codec source so amd64 and arm64 images are reproducible.
+ARG OPUS_MLOW_COMMIT=93e91a74c0a2af610d8313a85e2c811081a73f93
+RUN git clone https://github.com/edgardmessias/opus_mlow.git /build/opus_mlow \
+    && git -C /build/opus_mlow checkout --detach "$OPUS_MLOW_COMMIT"
 WORKDIR /build/opus_mlow
 # PORTABILIDADE DO SIMD: o fork força "-mavx" nos fontes do MLow (smpl_*), sem
 # detecção de CPU em runtime. Os smpl_*.c são C puro (zero intrínsecos), então
