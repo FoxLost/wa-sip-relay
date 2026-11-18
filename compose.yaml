@@ -1,0 +1,35 @@
+name: wa-sip-relay
+
+services:
+  relay:
+    image: ghcr.io/foxlost/wa-sip-relay:main
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WACALLS_HTTP_PORT:-8080}:8080/tcp"
+      - "${WACALLS_SIP_ADVERTISE_PORT:-5060}:5060/udp"
+      - "${WACALLS_SIP_ADVERTISE_PORT:-5060}:5060/tcp"
+      - "${WACALLS_RTP_PORT_MIN:-40000}-${WACALLS_RTP_PORT_MAX:-40049}:${WACALLS_RTP_PORT_MIN:-40000}-${WACALLS_RTP_PORT_MAX:-40049}/udp"
+    environment:
+      WA_SIP_RELAY_DB: /app/data/wa-sip-relay.db
+      WACALLS_API_KEY: ${WACALLS_API_KEY:?Set WACALLS_API_KEY in .env}
+      WACALLS_PUBLIC_IP: ${WACALLS_PUBLIC_IP:?Set WACALLS_PUBLIC_IP in .env}
+      WACALLS_SIP_ADDR: 0.0.0.0:5060
+      WACALLS_SIP_ADVERTISE_PORT: ${WACALLS_SIP_ADVERTISE_PORT:-5060}
+      WACALLS_RTP_PORT_MIN: ${WACALLS_RTP_PORT_MIN:-40000}
+      WACALLS_RTP_PORT_MAX: ${WACALLS_RTP_PORT_MAX:-40049}
+      WACALLS_MAX_CALLS: ${WACALLS_MAX_CALLS:-1}
+      WACALLS_MAX_ACCOUNTS: ${WACALLS_MAX_ACCOUNTS:-5}
+    volumes:
+      - ./data:/app/data
+    command:
+      - -addr
+      - :8080
+      - -static
+      - /app/client/dist
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"

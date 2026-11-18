@@ -1,0 +1,414 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"regexp"
+	"strconv"
+	"sync"
+
+	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
+	waLog "go.mau.fi/whatsmeow/util/log"
+)
+
+type SessionManager struct {
+	appCtx      context.Context
+	db          *dbProvider
+	broker      *Broker
+	store       *sessionStore
+	waLogger    waLog.Logger
+	log         *slog.Logger
+	maxCalls    int
+	maxAccounts int
+	// sipInbound, se definido, é chamado quando o WhatsApp recebe uma chamada,
+	// para tocar num softphone/PBX SIP registrado (gateway SIP).
+	sipInbound func(sess *Session, callID, peerNumber string)
+	// sipAgentCount conta as chamadas SIP do modo agente da sessão (limite de chamadas).
+	sipAgentCount func(sessionID string) int
+
+	// sipExtApply/sipExtRemove (modelo 2) sincronizam o registro da sessão num PBX
+	// externo: apply (re)inicia conforme a config; remove para ao deletar a sessão.
+	sipExtApply  func(sess *Session)
+	sipExtRemove func(sessionID string)
+
+	mu       sync.RWMutex
+	sessions map[string]*Session
+	order    []string
+	createMu sync.Mutex
+}
+
+func newSessionManager(ctx context.Context, db *dbProvider, broker *Broker, store *sessionStore, waLogger waLog.Logger, log *slog.Logger, maxCalls, maxAccounts int) *SessionManager {
+	return &SessionManager{
+		appCtx:      ctx,
+		db:          db,
+		broker:      broker,
+		store:       store,
+		waLogger:    waLogger,
+		log:         log,
+		maxCalls:    maxCalls,
+		maxAccounts: maxAccounts,
+		sessions:    map[string]*Session{},
+	}
+}
+
+func (m *SessionManager) register(s *Session) {
+	m.mu.Lock()
+	m.sessions[s.id] = s
+	m.order = append(m.order, s.id)
+	m.mu.Unlock()
+}
+
+func (m *SessionManager) unregister(id string) {
+	m.mu.Lock()
+	delete(m.sessions, id)
+	for i, x := range m.order {
+		if x == id {
+			m.order = append(m.order[:i], m.order[i+1:]...)
+			break
+		}
+	}
+	m.mu.Unlock()
+}
+
+// accountIDForSession devolve o account_id do Chatwoot ligado a uma sessão, ou 0
+// se ela não tem Chatwoot configurado. Usado para escopar os eventos de chamada
+// recebida por conta (multi-tenant), para não tocar no widget de outra empresa.
+func (m *SessionManager) accountIDForSession(sessionID string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[sessionID]; ok {
+		if c := s.getChatwoot(); c.valid() {
+			return c.AccountID
+		}
+		acct, _ := scopeFromName(sessionID, s.name)
+		return acct
+	}
+	return 0
+}
+
+var sessionNameScope = regexp.MustCompile(`^inbox(\d+)_acc(\d+)$`)
+
+// scopeFromName tira conta/caixa do padrão "inboxN_accM" com que o AstraChat cria
+// as sessões. Serve para a sessão nova, que ainda não tem Chatwoot configurado
+// enquanto pareia: sem isso o QR não chegaria ao SSE escopado da conta dona.
+func scopeFromName(id, name string) (acct, inbox int) {
+	for _, v := range []string{id, name} {
+		if m := sessionNameScope.FindStringSubmatch(v); m != nil {
+			inbox, _ = strconv.Atoi(m[1])
+			acct, _ = strconv.Atoi(m[2])
+			return
+		}
+	}
+	return 0, 0
+}
+
+// inboxIDForSession devolve a caixa (inbox) do Chatwoot ligada à sessão (0 = nenhuma).
+func (m *SessionManager) inboxIDForSession(sessionID string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[sessionID]; ok {
+		if c := s.getChatwoot(); c.valid() {
+			return c.InboxID
+		}
+		_, inbox := scopeFromName(sessionID, s.name)
+		return inbox
+	}
+	return 0
+}
+
+// hostForSession devolve o host do Chatwoot ligado à sessão ("" = nenhum).
+func (m *SessionManager) hostForSession(sessionID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.sessions[sessionID]; ok {
+		if c := s.getChatwoot(); c.valid() {
+			return chatwootHost(c.URL)
+		}
+	}
+	return ""
+}
+
+// chatwootScopeHost devolve o host da origem se ele for de um Chatwoot configurado
+// em alguma sessão; senão "" (escopo só pela conta, como antes). Duas instalações de
+// Chatwoot têm contas com o mesmo número (ex.: conta 1 em cada uma): sem o host, o
+// widget de uma enxergava as sessões/chamadas da outra.
+func (m *SessionManager) chatwootScopeHost(origin string) string {
+	host := chatwootHost(origin)
+	if host == "" {
+		return ""
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, s := range m.sessions {
+		if c := s.getChatwoot(); c.valid() && chatwootHost(c.URL) == host {
+			return host
+		}
+	}
+	return ""
+}
+
+// sessionForChatwoot acha a sessão ligada à conta (e à inbox, se inboxID > 0) do
+// Chatwoot em host ("" = qualquer Chatwoot).
+func (m *SessionManager) sessionForChatwoot(host string, accountID, inboxID int) *Session {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, s := range m.sessions {
+		c := s.getChatwoot()
+		if !c.valid() || c.AccountID != accountID || (inboxID > 0 && c.InboxID != inboxID) {
+			continue
+		}
+		if host != "" && chatwootHost(c.URL) != host {
+			continue
+		}
+		return s
+	}
+	return nil
+}
+
+func (m *SessionManager) Get(id string) (*Session, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.sessions[id]
+	return s, ok
+}
+
+func (m *SessionManager) infos() []SessionInfo {
+	m.mu.RLock()
+	ordered := make([]*Session, 0, len(m.order))
+	for _, id := range m.order {
+		if s, ok := m.sessions[id]; ok {
+			ordered = append(ordered, s)
+		}
+	}
+	m.mu.RUnlock()
+	out := make([]SessionInfo, 0, len(ordered))
+	for _, s := range ordered {
+		out = append(out, s.info())
+	}
+	return out
+}
+
+func (m *SessionManager) Restore(ctx context.Context) error {
+	rows, err := m.store.list(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.JID == "" {
+			_ = m.store.delete(ctx, row.ID)
+			continue
+		}
+		jid, err := types.ParseJID(row.JID)
+		if err != nil {
+			m.log.Warn("dropping session with unparseable jid", "session", row.ID, "jid", row.JID)
+			_ = m.store.delete(ctx, row.ID)
+			continue
+		}
+		container, db, err := m.db.openSessionContainer(ctx, row.ID)
+		if err != nil {
+			m.log.Error("opening session database failed", "session", row.ID, "err", err)
+			continue
+		}
+		device, err := container.GetDevice(ctx, jid)
+		if err != nil || device == nil || device.ID == nil {
+			m.log.Warn("dropping session with no matching stored device", "session", row.ID, "jid", row.JID, "err", err)
+			_ = db.Close()
+			_ = m.store.delete(ctx, row.ID)
+			continue
+		}
+		client := whatsmeow.NewClient(device, m.waLogger)
+		s := newSession(m, row.ID, row.Name, client)
+		if row.LastJID != "" {
+			s.lastJID = row.LastJID
+		} else {
+			s.lastJID = row.JID
+		}
+		s.waContainer = container
+		s.waDB = db
+		// backfill de credenciais SIP para sessões criadas antes do recurso.
+		if row.SIPUser == "" {
+			row.SIPUser = "wa_" + genSIPCredential(4)
+			row.SIPPass = genSIPCredential(12)
+			_ = m.store.setSIP(ctx, row.ID, row.SIPUser, row.SIPPass)
+		}
+		s.SIPUser = row.SIPUser
+		s.SIPPass = row.SIPPass
+		var agent sipAgentOpts
+		if row.SIPExtOpts != "" {
+			_ = json.Unmarshal([]byte(row.SIPExtOpts), &agent)
+		}
+		s.setSIPExt(sipExtConfig{
+			Enabled: row.SIPExtEnabled, Host: row.SIPExtHost, Port: row.SIPExtPort,
+			User: row.SIPExtUser, Pass: row.SIPExtPass, Dest: row.SIPExtDest, Proxy: row.SIPExtProxy,
+			Agent: agent,
+		})
+		s.loadWebhooks(row)
+		s.setRecording(row.Recording)
+		s.setProxy(row.Proxy)
+		if row.Chatwoot != "" {
+			var cfg ChatwootConfig
+			if json.Unmarshal([]byte(row.Chatwoot), &cfg) == nil {
+				s.setChatwoot(cfg)
+			}
+		}
+		m.register(s)
+		if m.sipExtApply != nil && s.SIPExtEnabled {
+			m.sipExtApply(s) // modelo 2: retoma o registro no PBX externo
+		}
+		if err := s.connect(ctx); err != nil {
+			m.log.Error("session connect failed", "session", row.ID, "err", err)
+		}
+	}
+	m.broker.emitSessionList(m.infos())
+	m.log.Info("sessions restored", "count", len(m.infos()))
+	return nil
+}
+
+var errAccountLimitReached = errors.New("WhatsApp account limit reached")
+
+func (m *SessionManager) Create(name string) (string, error) {
+	m.createMu.Lock()
+	defer m.createMu.Unlock()
+
+	m.mu.RLock()
+	count := len(m.sessions)
+	m.mu.RUnlock()
+	if m.maxAccounts > 0 && count >= m.maxAccounts {
+		return "", fmt.Errorf("%w: maximum %d", errAccountLimitReached, m.maxAccounts)
+	}
+
+	id := newSessionID()
+	sipUser, sipPass, err := m.store.insert(m.appCtx, id, name)
+	if err != nil {
+		return "", err
+	}
+	container, db, err := m.db.openSessionContainer(m.appCtx, id)
+	if err != nil {
+		_ = m.store.delete(m.appCtx, id)
+		return "", fmt.Errorf("create session store: %w", err)
+	}
+	device := container.NewDevice()
+	client := whatsmeow.NewClient(device, m.waLogger)
+	s := newSession(m, id, name, client)
+	s.waContainer = container
+	s.waDB = db
+	s.SIPUser = sipUser
+	s.SIPPass = sipPass
+	m.register(s)
+	m.broker.emitSessionList(m.infos())
+	if err := s.startPairing(m.appCtx); err != nil {
+		s.client.Disconnect()
+		m.unregister(id)
+		_ = db.Close()
+		_ = m.store.delete(m.appCtx, id)
+		m.broker.emitSessionList(m.infos())
+		m.log.Error("start pairing failed", "session", id, "err", err)
+		return "", fmt.Errorf("start pairing: %w", err)
+	}
+	m.log.Info("session created", "session", id, "name", name)
+	return id, nil
+}
+
+func (m *SessionManager) Delete(ctx context.Context, id string) error {
+	s, ok := m.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	if s.client.Store.ID != nil {
+		if err := s.client.Logout(ctx); err != nil {
+			m.log.Warn("logout failed; deleting locally", "session", id, "err", err)
+		}
+	}
+	if s.client.Store.ID != nil {
+		if err := s.client.Store.Delete(ctx); err != nil {
+			m.log.Warn("delete local WhatsApp device failed", "session", id, "err", err)
+		}
+	}
+	s.client.Disconnect()
+	s.teardownAllCalls()
+	if m.sipExtRemove != nil {
+		m.sipExtRemove(id) // modelo 2: para o registro no PBX externo
+	}
+	// Each session owns a connection pool to the shared relay SQLite file.
+	if s.waDB != nil {
+		_ = s.waDB.Close()
+	}
+	m.unregister(id)
+	if err := m.store.delete(ctx, id); err != nil {
+		m.broker.emitSessionList(m.infos())
+		return fmt.Errorf("delete session data: %w", err)
+	}
+	m.broker.emitSessionList(m.infos())
+	m.log.Info("session deleted", "session", id)
+	return nil
+}
+
+func (m *SessionManager) Logout(ctx context.Context, id string) error {
+	s, ok := m.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	if s.client.Store.ID != nil {
+		if err := s.client.Logout(ctx); err != nil {
+			m.log.Warn("logout failed", "session", id, "err", err)
+		}
+	}
+	s.replaceClient(whatsmeow.NewClient(s.waContainer.NewDevice(), m.waLogger))
+	_ = m.store.setJID(ctx, id, "")
+	s.setAuth(AuthSnapshot{State: "logged_out", Paired: false})
+	m.log.Info("session disconnected", "session", id)
+	return nil
+}
+
+func (m *SessionManager) Pair(id string) error {
+	s, ok := m.Get(id)
+	if !ok {
+		return fmt.Errorf("no session %s", id)
+	}
+	if s.client.Store.ID != nil {
+		return fmt.Errorf("session already paired")
+	}
+	s.replaceClient(whatsmeow.NewClient(s.waContainer.NewDevice(), m.waLogger))
+	if err := s.startPairing(m.appCtx); err != nil {
+		return fmt.Errorf("start pairing: %w", err)
+	}
+	m.broker.emitSessionList(m.infos())
+	m.log.Info("session re-pairing", "session", id)
+	return nil
+}
+
+// PairPhone inicia o pareamento por CÓDIGO (sem QR) e devolve o código de 8
+// dígitos que o usuário digita no WhatsApp do aparelho.
+func (m *SessionManager) PairPhone(id, phone string) (string, error) {
+	s, ok := m.Get(id)
+	if !ok {
+		return "", fmt.Errorf("no session %s", id)
+	}
+	if s.client.Store.ID != nil {
+		return "", fmt.Errorf("session already paired")
+	}
+	s.replaceClient(whatsmeow.NewClient(s.waContainer.NewDevice(), m.waLogger))
+	code, err := s.startPhonePairing(m.appCtx, phone)
+	if err != nil {
+		return "", fmt.Errorf("start phone pairing: %w", err)
+	}
+	m.broker.emitSessionList(m.infos())
+	m.log.Info("session phone-pairing", "session", id)
+	return code, nil
+}
+
+func (m *SessionManager) disconnectAll() {
+	m.mu.RLock()
+	all := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		all = append(all, s)
+	}
+	m.mu.RUnlock()
+	for _, s := range all {
+		s.shutdown()
+	}
+}
