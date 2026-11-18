@@ -6,24 +6,23 @@ export type GroupInfo = {
   participants?: unknown[];
 };
 
-// listGroups lista os grupos da sessão (para escolher onde ligar em grupo).
+// List groups available to this session.
 export const listGroups = (sid: string) =>
   apiGet<{ groups?: GroupInfo[] } | GroupInfo[]>(`/api/sessions/${sid}/groups`).then((r) =>
     Array.isArray(r) ? r : (r.groups ?? []),
   );
 
-// startGroupCall inicia uma chamada em grupo (toca para os membros do grupo).
+// Start a group call and ring group members.
 export const startGroupCall = (sid: string, groupJid: string, video = false) =>
   apiPost<{ callId: string; targets: number }>(`/api/sessions/${sid}/calls/group`, { groupJid, video });
 
-// endGroupCall encerra a chamada em grupo ativa.
+// End the active group call.
 export const endGroupCall = (sid: string) =>
   apiPost<unknown>(`/api/sessions/${sid}/calls/group/end`, {});
 
 export type RosterEntry = { phone: string; name: string };
 
-// getGroupRoster devolve o roster (número do LID -> telefone + nome) da chamada ativa,
-// p/ rotular os vídeos com número+nome em vez do @lid.
+// Resolve active group-call participant LIDs to phone numbers and names for video labels.
 export const getGroupRoster = (sid: string) =>
   apiGet<{ roster: Record<string, RosterEntry> }>(`/api/sessions/${sid}/calls/group/roster`).then(
     (r) => r.roster ?? {},

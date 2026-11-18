@@ -3,7 +3,7 @@ import { apiGet, apiPost, apiDelete } from "@/lib/api";
 export type McpKey = {
   id: string;
   name: string;
-  /** Começo da chave, para reconhecer (a chave inteira só aparece na criação). */
+  /** Prefix used to recognize a key; the full key is returned only at creation. */
   prefix: string;
   readOnly: boolean;
   createdAt: string;
@@ -12,11 +12,11 @@ export type McpKey = {
 
 export type McpKeyCreated = {
   key: McpKey;
-  /** A chave completa — devolvida uma única vez. */
+  /** Full key, returned once. */
   secret: string;
-  /** Endereço MCP para usar com Authorization: Bearer <secret>. */
+  /** MCP endpoint used with Authorization: Bearer <secret>. */
   endpoint: string;
-  /** URL completa com a chave (clientes que só aceitam URL). */
+  /** Complete URL for clients that accept only a URL. */
   url: string;
 };
 

@@ -1,8 +1,7 @@
-// passkey.ts — ponte entre o painel e a extensão "AstraCalls Passkey Connector".
+// Bridge between the panel and the AstraCalls Passkey Connector extension.
 //
-// Contas com passkey exigem uma prova WebAuthn feita na origem web.whatsapp.com,
-// o que só a extensão consegue fazer. Aqui detectamos a extensão e pedimos a
-// asserção; a assinatura resultante é enviada ao backend (POST /pair-passkey).
+// Passkey-protected accounts require WebAuthn proof from web.whatsapp.com. The extension runs
+// that assertion and this panel sends the resulting signature to POST /pair-passkey.
 
 const PANEL = "astracalls-panel";
 const EXT = "astracalls-ext";
@@ -30,7 +29,7 @@ export type WebAuthnAssertion = {
 
 let extReady = false;
 
-// a extensão anuncia presença com {source:EXT, type:"READY"} ao carregar
+// The extension announces its presence with a READY message when it loads.
 if (typeof window !== "undefined") {
   window.addEventListener("message", (e) => {
     if (e.source === window && (e.data?.source === EXT) && e.data?.type === "READY") {
@@ -43,7 +42,7 @@ function rid(): string {
   return "pk_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-// isExtensionInstalled faz um PING e espera o PONG (timeout curto).
+// Ping the extension and wait briefly for PONG.
 export function isExtensionInstalled(timeoutMs = 600): Promise<boolean> {
   if (extReady) return Promise.resolve(true);
   return new Promise((resolve) => {
@@ -67,8 +66,7 @@ export function isExtensionInstalled(timeoutMs = 600): Promise<boolean> {
   });
 }
 
-// runPasskeyAssertion pede à extensão a asserção WebAuthn para o desafio dado.
-// Resolve com a assinatura (WebAuthnAssertion) ou rejeita com o erro.
+// Ask the extension for a WebAuthn assertion and resolve with the signature or reject with its error.
 export function runPasskeyAssertion(publicKey: WebAuthnPublicKey): Promise<WebAuthnAssertion> {
   return new Promise((resolve, reject) => {
     const requestId = rid();
@@ -78,7 +76,7 @@ export function runPasskeyAssertion(publicKey: WebAuthnPublicKey): Promise<WebAu
       if (d?.source === EXT && d?.type === "PASSKEY_ASSERTION_RESULT" && d?.requestId === requestId) {
         window.removeEventListener("message", onMsg);
         if (d.ok && d.assertion) resolve(d.assertion as WebAuthnAssertion);
-        else reject(new Error(d.error || "falha na asserção passkey"));
+        else reject(new Error(d.error || "passkey assertion failed"));
       }
     }
     window.addEventListener("message", onMsg);
@@ -86,5 +84,5 @@ export function runPasskeyAssertion(publicKey: WebAuthnPublicKey): Promise<WebAu
   });
 }
 
-// download da extensão (zip servido pelo próprio backend, na mesma origem)
+// Extension archive served by the backend on the same origin.
 export const EXTENSION_DOWNLOAD_URL = "/astracalls-passkey.zip";

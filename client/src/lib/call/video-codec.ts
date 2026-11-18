@@ -21,7 +21,7 @@ export class VideoSender {
   private closed = false;
   private forceKey = false;
 
-  /** Força o próximo frame a ser keyframe (um participante pediu PLI/FIR). */
+  /** Force the next frame to be a keyframe after a participant PLI or FIR. */
   forceKeyframe(): void {
     this.forceKey = true;
   }
@@ -84,9 +84,8 @@ export class VideoReceiver {
   readonly stream: MediaStream;
 
   /**
-   * Chamado quando o decoder PRECISA de um keyframe pra (re)começar: ainda não
-   * abriu (só chegam deltas) ou deu erro de decodificação (frame corrompido por
-   * perda). Quem recebe pede um PLI ao participante.
+   * Called when the decoder needs a keyframe to start or recover after packet loss.
+   * The receiver should request a PLI from the participant.
    */
   onNeedKeyframe: (() => void) | null = null;
 

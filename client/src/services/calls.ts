@@ -25,17 +25,15 @@ export const rejectCall = async (sid: string, callId: string): Promise<void> => 
 export const endCall = (sid: string, callId: string) =>
   apiDelete(`/api/sessions/${sid}/calls/${callId}`);
 
-// Espera (hold): coloca a chamada em espera mantendo o leg vivo. moh=true toca música
-// de espera para o interlocutor (padrão no backend). resumeCall tira da espera.
+// Hold keeps the call leg alive and optionally plays music to the remote party.
 export const holdCall = (sid: string, callId: string, moh = true) =>
   apiPost(`/api/sessions/${sid}/calls/${callId}/hold`, { moh });
 
 export const resumeCall = (sid: string, callId: string) =>
   apiPost(`/api/sessions/${sid}/calls/${callId}/resume`, {});
 
-// Transferência cega para outro atendente. to opcional = clientId do atendente alvo;
-// sem ele, a oferta vai para todos os atendentes da conta (fila). pickupCall assume
-// uma chamada transferida (fixa o novo dono; não re-aceita no WhatsApp).
+// Blind transfer to an optional operator client ID, or to every account operator when omitted.
+// pickupCall takes ownership without accepting the WhatsApp call again.
 export const transferCall = (sid: string, callId: string, to?: string) =>
   apiPost(`/api/sessions/${sid}/calls/${callId}/transfer`, to ? { to } : {});
 
@@ -44,7 +42,6 @@ export const pickupCall = (sid: string, callId: string) =>
 
 export type VideoAction = "request" | "accept" | "reject" | "stop";
 
-// Negociação de vídeo mid-call: pedir upgrade, aceitar/recusar um pedido recebido
-// ou desligar o próprio vídeo (downgrade).
+// Request, accept, reject, or stop mid-call video.
 export const callVideo = (sid: string, callId: string, action: VideoAction) =>
   apiPost(`/api/sessions/${sid}/calls/${callId}/video/${action}`, {});

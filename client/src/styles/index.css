@@ -3,7 +3,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Paleta AstraCalls — navy #233E4F + azul-claro #89CFF3 (extraída da logo) */
+/* Relay palette derived from the original navy and sky-blue assets. */
 :root {
   --background: 205 25% 96%;
   --foreground: 205 30% 16%;
@@ -26,7 +26,7 @@
   --ring: 199 80% 58%;
   --radius: 0.9rem;
 
-  /* tokens de marca (acesso direto quando precisar) */
+  /* Brand tokens for direct use where needed. */
   --brand-navy: 203 39% 22%;
   --brand-sky: 199 82% 75%;
 }

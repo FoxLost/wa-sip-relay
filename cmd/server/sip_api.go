@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Endpoints HTTP para status e configuração SIP por sessão.
+// HTTP endpoints for per-session SIP status and configuration.
 
 func (s *server) handleSIPStatus(w http.ResponseWriter, r *http.Request) {
 	if s.sipGW == nil {
@@ -23,9 +23,11 @@ func (s *server) handleSIPStatus(w http.ResponseWriter, r *http.Request) {
 	regs := make([]map[string]string, 0, len(s.sipGW.registrations))
 	for _, reg := range s.sipGW.registrations {
 		regs = append(regs, map[string]string{
-			"sip_user":   reg.sipUser,
-			"session_id": reg.sessionID,
-			"contact":    reg.contact,
+			"sip_user":    reg.sipUser,
+			"session_id":  reg.sessionID,
+			"contact":     reg.contact,
+			"client_name": reg.clientName,
+			"source_ip":   reg.sourceIP,
 		})
 	}
 	calls := make([]map[string]string, 0, len(s.sipGW.activeCalls))

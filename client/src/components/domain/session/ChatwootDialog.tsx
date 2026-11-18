@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getChatwoot, setChatwoot, deleteChatwoot } from "@/services/chatwoot";
+import { copyText } from "@/lib/clipboard";
 
 const empty = { url: "", account_id: "", account_token: "", inbox_id: "", inbox_identifier: "" };
 
@@ -66,7 +67,7 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
         import_history: importHistory,
         import_history_days: Number(importDays) || 30,
       });
-      toast.success("Chatwoot conectado a esta sessão");
+      toast.success("Chatwoot connected to this session");
       setEnabled(true);
       setOpen(false);
     } catch (e) {
@@ -80,7 +81,7 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
     setBusy(true);
     try {
       await deleteChatwoot(sid);
-      toast.success("Chatwoot desconectado");
+      toast.success("Chatwoot disconnected");
       setEnabled(false);
       setForm({ ...empty });
       setOpen(false);
@@ -91,10 +92,14 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
     }
   };
 
-  const copy = () => {
-    navigator.clipboard?.writeText(webhookUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const copy = async () => {
+    try {
+      await copyText(webhookUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Could not copy");
+    }
   };
 
   return (
@@ -107,16 +112,16 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Integração com Chatwoot</DialogTitle>
+          <DialogTitle>Chatwoot integration</DialogTitle>
           <DialogDescription>
-            Conecte esta sessão a uma caixa de entrada (inbox do tipo <b>API</b>) do Chatwoot.
+            Connect this session to a Chatwoot API inbox.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>URL do Chatwoot</Label>
-            <Input value={form.url} onChange={set("url")} placeholder="https://chatwoot.seudominio.com" />
+            <Label>Chatwoot URL</Label>
+            <Input value={form.url} onChange={set("url")} placeholder="https://chatwoot.example.com" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -134,7 +139,7 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
               value={form.account_token}
               onChange={set("account_token")}
               type="password"
-              placeholder={enabled ? "deixe vazio p/ manter o atual" : "token do agente/admin"}
+              placeholder={enabled ? "leave blank to keep the current token" : "agent or admin token"}
             />
           </div>
           <div className="space-y-1">
@@ -142,10 +147,10 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
             <Input value={form.inbox_identifier} onChange={set("inbox_identifier")} placeholder="abcd1234" />
           </div>
           <div className="space-y-1">
-            <Label>Webhook (cole na inbox do Chatwoot)</Label>
+            <Label>Webhook (paste into the Chatwoot inbox)</Label>
             <div className="flex gap-2">
               <Input readOnly value={webhookUrl} className="text-xs" onFocus={(e) => e.target.select()} />
-              <Button type="button" variant="outline" size="icon" onClick={copy} aria-label="Copiar webhook">
+              <Button type="button" variant="outline" size="icon" onClick={() => void copy()} aria-label="Copy webhook">
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -153,45 +158,45 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
 
           <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border p-3">
             <span className="space-y-0.5">
-              <span className="block text-sm font-medium">Refletir mensagens enviadas pela API</span>
+              <span className="block text-sm font-medium">Mirror messages sent through the API</span>
               <span className="block text-xs text-muted-foreground">
-                O que for disparado pela API (ex.: n8n) aparece na conversa como nota privada, igual ao
-                que é enviado pelo aparelho. Não reenvia nada ao contato.
+                Messages sent through the API, such as n8n, appear in the conversation as private notes.
+                They are not sent to the contact again.
               </span>
             </span>
             <Switch
               checked={mirrorApi}
               onCheckedChange={setMirrorApi}
-              aria-label="Refletir mensagens enviadas pela API"
+              aria-label="Mirror messages sent through the API"
             />
           </label>
 
           <div className="rounded-lg border p-3">
             <label className="flex cursor-pointer items-start justify-between gap-4">
               <span className="space-y-0.5">
-                <span className="block text-sm font-medium">Importar histórico ao conectar</span>
+                <span className="block text-sm font-medium">Import history when connecting</span>
                 <span className="block text-xs text-muted-foreground">
-                  Traz as conversas antigas que o WhatsApp envia ao parear, reconstruindo a timeline no
-                  Chatwoot. Ative <b>antes de conectar a conta</b> — o histórico só chega no pareamento.
+                  Import conversations received through WhatsApp HistorySync to rebuild the Chatwoot timeline.
+                  Enable this before linking the account because history arrives only during pairing.
                 </span>
               </span>
               <Switch
                 checked={importHistory}
                 onCheckedChange={setImportHistory}
-                aria-label="Importar histórico ao conectar"
+                aria-label="Import history when connecting"
               />
             </label>
             {importHistory && (
               <div className="mt-3 flex items-center gap-2">
-                <Label className="text-xs text-muted-foreground">Importar últimos</Label>
+                <Label className="text-xs text-muted-foreground">Import the last</Label>
                 <Input
                   value={importDays}
                   onChange={(e) => setImportDays(e.target.value.replace(/\D/g, ""))}
                   inputMode="numeric"
                   className="h-8 w-20"
-                  aria-label="Dias de histórico a importar"
+                  aria-label="Number of history days to import"
                 />
-                <span className="text-xs text-muted-foreground">dias</span>
+                <span className="text-xs text-muted-foreground">days</span>
               </div>
             )}
           </div>
@@ -200,14 +205,14 @@ export const ChatwootDialog = ({ sid }: { sid: string }) => {
         <DialogFooter className="gap-2 sm:justify-between">
           {enabled ? (
             <Button variant="destructive" size="sm" disabled={busy} onClick={disconnect}>
-              Desconectar
+              Disconnect
             </Button>
           ) : (
             <span />
           )}
           <Button disabled={busy} onClick={save}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Salvar
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

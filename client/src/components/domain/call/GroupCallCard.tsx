@@ -9,9 +9,8 @@ import { WSAudioBridge } from "@/lib/ws-audio";
 import { GroupVideoBridge } from "@/lib/call/group-video";
 import { listGroups, startGroupCall, endGroupCall, getGroupRoster, type RosterEntry } from "@/services/groupCalls";
 
-// VideoTile liga um MediaStream a um <video> (srcObject não é prop do React). A rotação
-// é AUTOMÁTICA (orientação do celular do participante, vinda do RTP) com ajuste
-// MANUAL por cima (botão de girar, 90° por clique) caso o usuário queira acertar.
+// VideoTile binds a MediaStream to a video element because srcObject is not a React property.
+// RTP orientation is applied automatically, with a manual 90-degree adjustment on top.
 const VideoTile = ({
   stream,
   label,
@@ -21,7 +20,7 @@ const VideoTile = ({
   stream: MediaStream;
   label: string;
   muted?: boolean;
-  orientation?: number; // quartos de volta horários (0..3)
+  orientation?: number; // clockwise quarter turns (0..3)
 }) => {
   const ref = useRef<HTMLVideoElement>(null);
   const [manual, setManual] = useState(0);
@@ -29,8 +28,7 @@ const VideoTile = ({
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
-  // Só gira sozinho quando o quadro chega DEITADO e o celular diz que está em pé
-  // (CVO 1/3): se o aparelho já manda o quadro girado (em pé), não mexe.
+  // Auto-rotate only landscape frames when the phone reports portrait orientation.
   const onSize = () => {
     const el = ref.current;
     if (el && el.videoWidth && el.videoHeight) setLandscape(el.videoWidth > el.videoHeight);
@@ -38,7 +36,7 @@ const VideoTile = ({
   const auto = orientation % 2 === 1 && landscape ? orientation * 90 : 0;
   const rot = (auto + manual) % 360;
   const setRot = (fn: (r: number) => number) => setManual((m) => fn(m) % 360);
-  // Em 90°/270° a imagem gira dentro do bloco; escala p/ preencher sem cortar demais.
+  // Scale sideways video so it fills the tile without excessive cropping.
   const sideways = rot === 90 || rot === 270;
   return (
     <div className="relative h-32 overflow-hidden rounded-md bg-black">
@@ -55,7 +53,7 @@ const VideoTile = ({
       <button
         type="button"
         onClick={() => setRot((r) => (r + 90) % 360)}
-        title="Girar câmera"
+        title="Rotate camera"
         className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white hover:bg-black/80"
       >
         <RotateCw className="h-3.5 w-3.5" />
@@ -67,9 +65,8 @@ const VideoTile = ({
   );
 };
 
-// GroupCallCard — chamada em GRUPO (experimental): escolhe um grupo, liga pros
-// membros e conecta áudio (ouvir/falar) e, opcionalmente, VÍDEO (câmera + vídeo dos
-// participantes). Só aparece quando a instância tem a flag de grupo ligada.
+// Experimental group calls: select a group, call its members, and bridge two-way audio with
+// optional camera and participant video. Shown only when group calls are enabled.
 export const GroupCallCard = ({ sid }: { sid: string }) => {
   const { data: config } = useQuery({
     queryKey: ["config-groupcalls"],
@@ -99,11 +96,11 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
   const start = async (withVideo: boolean) => {
     const target = jid || groups?.[0]?.jid;
     if (!target) {
-      toast.error("Escolha um grupo");
+      toast.error("Select a group");
       return;
     }
     if (withVideo && !GroupVideoBridge.supported()) {
-      toast.error("Seu navegador não suporta vídeo (WebCodecs)");
+      toast.error("This browser does not support video through WebCodecs");
       return;
     }
     setStatus("calling");
@@ -130,11 +127,11 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
         await vb.connect();
         setLocalStream(vb.localStream);
       }
-      toast.success(withVideo ? "Chamada de vídeo em grupo iniciada" : "Chamada em grupo iniciada");
+      toast.success(withVideo ? "Group video call started" : "Group call started");
     } catch (e) {
       await cleanup();
       setStatus("idle");
-      toast.error((e as Error).message || "Falha ao iniciar a chamada em grupo");
+      toast.error((e as Error).message || "Could not start the group call");
     }
   };
 
@@ -148,7 +145,7 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
     setRoster({});
   };
 
-  // labelFor traduz o pid (ex.: "144946606653478:55@lid") em número + nome via roster.
+  // Resolve a participant LID to the roster's phone number and name.
   const labelFor = (pid: string) => {
     const lidNum = pid.split(/[:@]/)[0];
     const e = roster[lidNum];
@@ -171,7 +168,7 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
   return (
     <Card className="space-y-3 p-4">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <Users className="h-4 w-4" /> Chamada em grupo
+        <Users className="h-4 w-4" /> Group call
         <span className="rounded bg-muted px-1.5 py-0.5 text-[0.6rem] uppercase text-muted-foreground">
           experimental
         </span>
@@ -184,7 +181,7 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
             onChange={(e) => setJid(e.target.value)}
             className="rounded-md border bg-background px-3 py-2 text-sm"
           >
-            <option value="">Selecione um grupo…</option>
+            <option value="">Select a group…</option>
             {(groups ?? []).map((g) => (
               <option key={g.jid} value={g.jid}>
                 {g.name} ({g.participants?.length ?? 0})
@@ -193,10 +190,10 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
           </select>
           <div className="flex gap-2">
             <Button onClick={() => start(false)} className="flex-1">
-              <PhoneCall className="h-4 w-4" /> Ligar (áudio)
+              <PhoneCall className="h-4 w-4" /> Call with audio
             </Button>
             <Button onClick={() => start(true)} variant="secondary" className="flex-1">
-              <Video className="h-4 w-4" /> Ligar com vídeo
+              <Video className="h-4 w-4" /> Call with video
             </Button>
           </div>
         </div>
@@ -206,21 +203,21 @@ export const GroupCallCard = ({ sid }: { sid: string }) => {
             <span className="flex items-center gap-2 text-sm text-muted-foreground">
               {status === "calling" ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Conectando…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Connecting…
                 </>
               ) : (
                 <>
-                  <span className="h-2.5 w-2.5 rounded-full bg-primary" /> Em chamada de grupo
+                  <span className="h-2.5 w-2.5 rounded-full bg-primary" /> Group call active
                 </>
               )}
             </span>
             <Button variant="destructive" onClick={end}>
-              <PhoneOff className="h-4 w-4" /> Encerrar
+              <PhoneOff className="h-4 w-4" /> End
             </Button>
           </div>
           {(localStream || peers.length > 0) && (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {localStream && <VideoTile stream={localStream} label="Você" muted />}
+              {localStream && <VideoTile stream={localStream} label="You" muted />}
               {peers.map((p) => (
                 <VideoTile key={p.pid} stream={p.stream} label={labelFor(p.pid)} orientation={p.orientation} />
               ))}

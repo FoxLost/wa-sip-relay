@@ -2,9 +2,9 @@ import { H264_CHANNEL_LABEL } from "@/constants/video";
 import { VideoReceiver, VideoSender, videoSupported } from "./video-codec";
 
 export type VideoChannel = {
-  // Presente quando o navegador suporta WebCodecs: renderiza o vídeo do peer.
+  // Available with WebCodecs support and used to render peer video.
   remoteVideoStream: MediaStream | null;
-  // Liga/desliga o envio da nossa câmera sob demanda (upgrade/downgrade mid-call).
+  // Enable or disable camera sending for mid-call upgrades and downgrades.
   startSender: (track: MediaStreamTrack) => void;
   stopSender: () => void;
   close: () => void;
@@ -17,11 +17,9 @@ const noVideoChannel: VideoChannel = {
   close: () => {},
 };
 
-// setupVideoChannel abre o datachannel "h264" e o receptor — mesmo em chamadas que
-// começam só de áudio — para que um upgrade mid-call não precise renegociar SDP. O
-// envio da câmera fica lazy (startSender). Espelha o backend, que mantém a pipeline
-// de vídeo keyada em toda chamada. IMPORTANTE: se o navegador não tiver WebCodecs, ou
-// algo falhar aqui, NUNCA deve derrubar o áudio — cai no canal no-op e a call segue.
+// Open the H264 data channel and receiver even for audio-only calls so mid-call video upgrades
+// do not require SDP renegotiation. Camera sending starts lazily. WebCodecs failures must never
+// drop audio, so unsupported or failed setup falls back to this no-op channel.
 export const setupVideoChannel = (pc: RTCPeerConnection): VideoChannel => {
   if (!videoSupported()) return noVideoChannel;
   try {
@@ -64,7 +62,7 @@ const buildVideoChannel = (pc: RTCPeerConnection): VideoChannel => {
     remoteVideoStream: receiver.stream,
     startSender: (track) => {
       if (open) startNow(track);
-      else pending = track; // envia assim que o canal abrir
+      else pending = track; // Send as soon as the channel opens.
     },
     stopSender: () => {
       try {

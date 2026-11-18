@@ -55,17 +55,17 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
           <img src="/logoCalls.png" alt="AstraCalls" className="h-7 w-auto select-none" draggable={false} />
         </span>
         {version && (
-          <span className="font-mono text-[0.6rem] leading-none text-muted-foreground" title={commit ? `commit ${commit}` : "Versão rodando"}>
+          <span className="font-mono text-[0.6rem] leading-none text-muted-foreground" title={commit ? `commit ${commit}` : "Running version"}>
             {version}
           </span>
         )}
       </div>
       <Button className="w-full" onClick={onNew} disabled={creating}>
         {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-        Nova conta
+        New account
       </Button>
       <p className="px-3 pb-1 pt-4 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
-        Contas
+        Accounts
       </p>
       <div className="flex-1 space-y-1 overflow-y-auto pr-0.5">
         {sessions.map((s) => (
@@ -99,14 +99,14 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
                 setToDelete(s);
               }}
               className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-              aria-label={`Excluir ${s.name}`}
+              aria-label={`Delete ${s.name}`}
             >
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
         ))}
         {sessions.length === 0 && (
-          <p className="px-3 py-2 text-sm text-muted-foreground">Nenhuma conta ainda.</p>
+          <p className="px-3 py-2 text-sm text-muted-foreground">No accounts yet.</p>
         )}
       </div>
 
@@ -114,18 +114,18 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
         href={EXTENSION_DOWNLOAD_URL}
         download
         className="mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        title="Necessária apenas para conectar contas protegidas por passkey"
+        title="Required only for accounts protected by a passkey"
       >
         <KeyRound className="h-3.5 w-3.5 shrink-0" />
-        Extensão Passkey (.zip)
+        Passkey extension (.zip)
       </a>
 
       <ConfirmDialog
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
-        title="Excluir conta?"
-        description={toDelete ? `${toDelete.name} será desconectada e removida.` : undefined}
-        confirmLabel="Excluir"
+        title="Delete account?"
+        description={toDelete ? `${toDelete.name} will be disconnected and removed.` : undefined}
+        confirmLabel="Delete"
         destructive
         onConfirm={() => {
           if (toDelete) void remove(toDelete.id);

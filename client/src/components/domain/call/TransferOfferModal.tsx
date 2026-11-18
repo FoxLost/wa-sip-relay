@@ -5,8 +5,8 @@ import { useCalls, clearTransferOffer } from "@/stores/calls";
 import { useDevices } from "@/stores/devices";
 import { usePickupCall } from "@/hooks/usePickupCall";
 
-// Modal exibido ao atendente alvo quando uma chamada é transferida para ele. Enquanto
-// isso o interlocutor ouve música de espera. "Atender" assume a chamada (pickup).
+// Shown to the target operator when a call is transferred. The remote party hears hold music
+// until the target accepts and takes ownership of the call.
 export const TransferOfferModal = () => {
   const offer = useCalls((s) => s.transferOffer);
   const micId = useDevices((s) => s.micId);
@@ -25,7 +25,7 @@ export const TransferOfferModal = () => {
           <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
             <PhoneForwarded className="h-7 w-7" />
           </div>
-          <DialogTitle>Chamada transferida</DialogTitle>
+          <DialogTitle>Transferred call</DialogTitle>
           <DialogDescription className="truncate">{offer?.peer}</DialogDescription>
         </DialogHeader>
         <div className="mt-2 flex items-center justify-center gap-6">
@@ -35,7 +35,7 @@ export const TransferOfferModal = () => {
             className="h-14 w-14 rounded-full"
             disabled={pickup.isPending}
             onClick={() => clearTransferOffer()}
-            aria-label="Dispensar"
+            aria-label="Dismiss"
           >
             <X className="h-6 w-6" />
           </Button>
@@ -44,7 +44,7 @@ export const TransferOfferModal = () => {
             className="h-14 w-14 rounded-full"
             disabled={pickup.isPending}
             onClick={() => offer && pickup.mutate({ sid: offer.sessionId, callId: offer.callId })}
-            aria-label="Atender"
+            aria-label="Answer"
           >
             <Phone className="h-6 w-6" />
           </Button>

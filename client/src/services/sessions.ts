@@ -24,9 +24,8 @@ export const logoutSession = (id: string) => postVoid(`/api/sessions/${id}/logou
 
 export const pairSession = (id: string) => postVoid(`/api/sessions/${id}/pair`);
 
-// Pareamento por CÓDIGO (sem QR): envia o número (só dígitos, com DDI) e recebe
-// o código de 8 caracteres que o dono digita no WhatsApp em
-// Aparelhos conectados → Conectar com número de telefone.
+// Pair by phone-number code: send digits including country code and receive the eight-character
+// code entered in WhatsApp under Linked devices.
 export const pairSessionCode = (id: string, phone: string) =>
   apiPost<{ code: string }>(`/api/sessions/${id}/pair-code`, { phone });
 
@@ -58,9 +57,9 @@ export type SIPConfig = {
 export const getSIP = (id: string) =>
   apiGet<SIPConfig>(`/api/sessions/${id}/sip`);
 
-// Modelo 2 (SIP): registrar esta sessão num PBX externo.
+// External SIP mode: register this session with a PBX.
 export type SIPExtConfig = {
-  /** Usuário de autenticação quando difere do ramal (3CX: Authentication ID). */
+  /** Authentication username when it differs from the extension, such as 3CX Authentication ID. */
   authUser?: string;
   enabled: boolean;
   host: string;
@@ -102,7 +101,7 @@ export const setProxy = async (id: string, proxy: string): Promise<void> => {
   }
 };
 
-// Formulários nativos do app WhatsApp Business que a conta já enviou (GET /native-forms).
+// Native WhatsApp Business forms already sent by this account.
 export type NativeFormInfo = {
   flowId: string;
   flowName?: string;

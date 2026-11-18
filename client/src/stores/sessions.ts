@@ -8,14 +8,14 @@ import type { WebAuthnPublicKey } from "@/lib/passkey";
 type State = {
   sessions: SessionInfo[];
   qrs: Record<string, string>;
-  codes: Record<string, string>; // código de pareamento por telefone (8 dígitos) por sessão
-  passkeys: Record<string, WebAuthnPublicKey>; // desafio WebAuthn pendente por sessão
+  codes: Record<string, string>; // eight-digit phone pairing code per session
+  passkeys: Record<string, WebAuthnPublicKey>; // pending WebAuthn challenge per session
   activeId: string | null;
 };
 
 export const useSessions = create<State>(() => ({ sessions: [], qrs: {}, codes: {}, passkeys: {}, activeId: null }));
 
-/** Guarda localmente o código devolvido pelo POST /pair-code (a UI mostra na hora). */
+/** Store the pairing code immediately so the UI can display it. */
 export const setPairingCode = (id: string, code: string): void =>
   useSessions.setState((s) => ({ codes: { ...s.codes, [id]: code } }));
 

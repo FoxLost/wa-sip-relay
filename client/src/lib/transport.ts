@@ -1,21 +1,17 @@
 /**
- * transport.ts — Seleção do transporte de mídia da chamada.
+ * Call media transport selection.
  *
- * Dois transportes existem:
- *   - "webrtc"    (padrão): áudio+vídeo via RTCPeerConnection/UDP. Exige que o
- *                 browser alcance o servidor por UDP (IP público direto).
- *   - "websocket": áudio via WSS/443 (PCM16). Atravessa proxy reverso HTTP
- *                 (Cloudflare, Nginx, firewall que bloqueia UDP). Sem vídeo.
+ * Available transports:
+ *   - "webrtc" (default): Opus audio and H264 video through RTCPeerConnection and UDP.
+ *   - "websocket": PCM16 audio through WSS, suitable for reverse proxies that block UDP.
  *
- * Seleção (ordem de prioridade):
- *   1. Query param na URL:  ?transport=ws   (ou ?transport=webrtc)
- *   2. localStorage:        wacalls.transport = "websocket" | "webrtc"
- *   3. padrão:              "auto" (ver getTransportMode)
+ * Selection priority:
+ *   1. URL query parameter: ?transport=ws or ?transport=webrtc
+ *   2. localStorage: wacalls.transport = "websocket" | "webrtc"
+ *   3. "auto"
  *
- * No modo "auto" (padrão) o openAdaptiveCall tenta WebRTC (mantém vídeo quando a
- * rede permite) e, se o ICE NÃO conectar em alguns segundos (proxy/firewall
- * bloqueando UDP), cai automaticamente para o WebSocket (áudio-only) — sem o
- * operador abrir porta nem escolher nada. Forçar ?transport= desliga o fallback.
+ * Auto mode tries WebRTC first and falls back to audio-only WebSocket when ICE cannot connect.
+ * An explicit query parameter disables fallback.
  */
 
 export type Transport = "webrtc" | "websocket";
@@ -31,12 +27,9 @@ function normalize(v: string | null): Transport | null {
 }
 
 /**
- * Modo de transporte, distinguindo escolha EXPLÍCITA de "auto" (nada escolhido).
- *   - "webrtc" / "websocket": operador forçou via ?transport= ou localStorage.
- *   - "auto" (padrão): sem escolha — o openAdaptiveCall tenta WebRTC e, se o ICE
- *     não conectar, cai automaticamente para WebSocket (áudio-only). Isso faz a
- *     chamada funcionar atrás de proxy/firewall que bloqueia UDP sem o operador
- *     precisar abrir porta nem setar nada.
+ * Transport mode that distinguishes an explicit choice from automatic selection.
+ * Explicit WebRTC or WebSocket may come from the query parameter or localStorage.
+ * Auto tries WebRTC first and falls back to WebSocket when UDP is unavailable.
  */
 export type TransportMode = "webrtc" | "websocket" | "auto";
 
@@ -45,45 +38,43 @@ export function getTransportMode(): TransportMode {
     const fromQuery = normalize(new URLSearchParams(window.location.search).get("transport"));
     if (fromQuery) return fromQuery;
   } catch {
-    /* ambiente sem window.location — ignora */
+    /* window.location is unavailable */
   }
   try {
     const fromStore = normalize(localStorage.getItem(STORAGE_KEY));
     if (fromStore) return fromStore;
   } catch {
-    /* localStorage indisponível — ignora */
+    /* localStorage is unavailable */
   }
-  // Padrão do servidor (injetado no index.html via WACALLS_DEFAULT_TRANSPORT).
-  // Permite fixar o transporte por instância (ex.: "websocket" onde o WebRTC/UDP
-  // não fecha) sem o agente precisar de ?transport=. Query e localStorage têm
-  // prioridade sobre isso.
+  // Server default injected through WACALLS_DEFAULT_TRANSPORT. Query and localStorage values
+  // take precedence over this per-instance setting.
   try {
     const fromServer = normalize((window as unknown as { __WACALLS_DEFAULT_TRANSPORT?: string }).__WACALLS_DEFAULT_TRANSPORT ?? null);
     if (fromServer) return fromServer;
   } catch {
-    /* ignora */
+    /* ignore invalid server defaults */
   }
   return "auto";
 }
 
-/** Retorna o transporte selecionado (query param > localStorage > "webrtc"). */
+/** Return the selected transport, preferring the query parameter over localStorage. */
 export function getTransport(): Transport {
   try {
     const fromQuery = normalize(new URLSearchParams(window.location.search).get("transport"));
     if (fromQuery) return fromQuery;
   } catch {
-    /* ambiente sem window.location — ignora */
+    /* window.location is unavailable */
   }
   try {
     const fromStore = normalize(localStorage.getItem(STORAGE_KEY));
     if (fromStore) return fromStore;
   } catch {
-    /* localStorage indisponível — ignora */
+    /* localStorage is unavailable */
   }
   return "webrtc";
 }
 
-/** Fixa o transporte para as próximas chamadas (persistido em localStorage). */
+/** Persist the transport for future calls. */
 export function setTransport(t: Transport): void {
   try {
     localStorage.setItem(STORAGE_KEY, t);
@@ -92,7 +83,7 @@ export function setTransport(t: Transport): void {
   }
 }
 
-/** Remove a preferência persistida (volta ao padrão WebRTC). */
+/** Remove the persisted preference and return to WebRTC. */
 export function clearTransport(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);

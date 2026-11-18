@@ -35,7 +35,7 @@ export type BrokerEvent =
       localVideo: boolean;
       upgradeIncoming: boolean;
       upgradeOutgoing: boolean;
-      peerOrientation?: number; // rotação da câmera do peer (0..3, quartos de volta horários)
+      peerOrientation?: number; // peer camera orientation in clockwise quarter turns
     };
 
 type Listener = (ev: BrokerEvent) => void;

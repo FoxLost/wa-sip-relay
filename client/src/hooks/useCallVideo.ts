@@ -12,10 +12,9 @@ const empty: CallVideoState = {
   peerOrientation: 0,
 };
 
-// useCallVideo concentra as ações de vídeo mid-call de uma chamada: ligar a
-// câmera (pede upgrade), desligar (downgrade), e aceitar/recusar um pedido do
-// peer. Liga a câmera do navegador via OpenCall.setLocalVideo e sinaliza o
-// backend via callVideo.
+// Handle mid-call video actions: request an upgrade, downgrade to audio, and accept or reject
+// peer upgrades. The browser camera is controlled through OpenCall while the backend receives
+// signaling through callVideo.
 export const useCallVideo = (call: CallSummary) => {
   const conn = useCalls((s) => s.ownConnections.get(call.callId));
   const state = useCalls((s) => s.videoStates.get(call.callId)) ?? empty;
@@ -27,26 +26,26 @@ export const useCallVideo = (call: CallSummary) => {
     try {
       await fn();
     } catch (e) {
-      toast.error((e as Error).message || "Falha na negociação de vídeo");
+      toast.error((e as Error).message || "Video negotiation failed");
     } finally {
       setBusy(false);
     }
   };
 
-  // Liga a câmera e pede o upgrade para a outra ponta.
+  // Enable the camera and request an upgrade from the remote party.
   const enable = () =>
     run(async () => {
       if (!conn) return;
       const ok = await conn.setLocalVideo(true);
       if (!ok) {
-        toast.error("Câmera/vídeo não suportado neste navegador");
+        toast.error("This browser does not support camera video");
         return;
       }
       setLocalVideoState(call.callId, true);
       await callVideo(call.sessionId, call.callId, "request");
     });
 
-  // Desliga a câmera (downgrade para áudio).
+  // Disable the camera and downgrade to audio.
   const disable = () =>
     run(async () => {
       await callVideo(call.sessionId, call.callId, "stop").catch(() => {});
@@ -54,7 +53,7 @@ export const useCallVideo = (call: CallSummary) => {
       setLocalVideoState(call.callId, false);
     });
 
-  // Aceita um pedido de upgrade recebido: confirma no backend e liga a câmera.
+  // Accept a peer upgrade request and enable the camera.
   const accept = () =>
     run(async () => {
       await callVideo(call.sessionId, call.callId, "accept");
@@ -64,7 +63,7 @@ export const useCallVideo = (call: CallSummary) => {
       }
     });
 
-  // Recusa o pedido de upgrade recebido.
+  // Reject a peer upgrade request.
   const reject = () =>
     run(async () => {
       await callVideo(call.sessionId, call.callId, "reject");

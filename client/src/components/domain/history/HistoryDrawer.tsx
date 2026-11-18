@@ -6,8 +6,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useHistory } from "@/hooks/useHistory";
+import { useLanguage } from "@/lib/i18n";
 
 export const HistoryDrawer = ({ sid }: { sid: string }) => {
+  const { language, t } = useLanguage();
   const [open, setOpen] = useState(false);
   const { data: rows = [] } = useHistory(sid, open);
 
@@ -16,24 +18,26 @@ export const HistoryDrawer = ({ sid }: { sid: string }) => {
       <SheetTrigger asChild>
         <Button variant="outline" size="sm">
           <History className="h-4 w-4" />
-          Call history
+          {t("Call history")}
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full p-0 sm:max-w-md">
         <SheetHeader className="p-6 pb-4">
-          <SheetTitle>Call history</SheetTitle>
+          <SheetTitle>{t("Call history")}</SheetTitle>
         </SheetHeader>
         <Separator />
         <ScrollArea className="h-[calc(100vh-5.5rem)] px-6 py-4">
           {rows.length === 0 ? (
-            <EmptyState title="No previous calls" description="Completed incoming and outgoing calls appear here." />
+            <EmptyState title={t("No previous calls")} description={t("Completed incoming and outgoing calls appear here.")} />
           ) : (
             <ul className="space-y-2">
               {rows.map((r) => (
                 <li key={r.callId} className="rounded-lg border p-3">
                   <p className="font-medium">{r.peer}</p>
                   <p className="text-xs text-muted-foreground">
-                    {r.direction} · {new Date(r.startedAt).toLocaleString()}
+                    {t(r.direction === "incoming" ? "Incoming" : r.direction === "outgoing" ? "Outgoing" : r.direction)}
+                    {" · "}
+                    {new Date(r.startedAt).toLocaleString(language === "id" ? "id-ID" : "en-US")}
                   </p>
                 </li>
               ))}

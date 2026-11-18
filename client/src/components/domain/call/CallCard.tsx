@@ -49,12 +49,12 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const active = call.status === "connected";
   const showVideo = video.state.peerVideo || video.state.localVideo;
-  // Rotação do vídeo do cliente: automática (orientação do celular, vinda do RTP) +
-  // ajuste manual do atendente (botão de girar, 90° por clique) por cima.
+  // Automatically rotate remote video from RTP orientation metadata, then apply the operator's
+  // manual 90-degree rotation adjustment.
   const [manualRot, setManualRot] = useState(0);
   const [remoteLandscape, setRemoteLandscape] = useState(false);
-  // Só gira sozinho quando o quadro chega DEITADO e o celular diz que está em pé
-  // (CVO 1/3): se o aparelho já manda o quadro girado (em pé), não mexe.
+  // Auto-rotate only landscape frames when the phone reports portrait orientation. Do not rotate
+  // frames that the phone already sends in portrait.
   const onRemoteSize = () => {
     const el = remoteVideoRef.current;
     if (el && el.videoWidth && el.videoHeight) setRemoteLandscape(el.videoWidth > el.videoHeight);
@@ -87,8 +87,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
     };
   }, [conn]);
 
-  // Em espera: silencia o mic local (o backend já não envia o áudio do atendente, mas
-  // isto zera o medidor e evita uplink à toa) e retoma ao sair da espera.
+  // While held, mute the local microphone to stop unnecessary uplink and reset the meter.
   useEffect(() => {
     if (!conn) return;
     for (const t of conn.micStream.getAudioTracks()) t.enabled = !held;
@@ -157,7 +156,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
                     <PhoneForwarded className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Transferir para outro atendente</TooltipContent>
+                <TooltipContent>Transfer to another operator</TooltipContent>
               </Tooltip>
             )}
             {active && !held && (
@@ -168,13 +167,13 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
                     size="icon"
                     disabled={video.busy}
                     onClick={() => (video.state.localVideo ? video.disable() : video.enable())}
-                    aria-label={video.state.localVideo ? "Desligar vídeo" : "Ligar vídeo"}
+                    aria-label={video.state.localVideo ? "Turn off video" : "Turn on video"}
                   >
                     {video.state.localVideo ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {video.state.localVideo ? "Desligar vídeo" : "Ativar vídeo"}
+                  {video.state.localVideo ? "Turn off video" : "Turn on video"}
                 </TooltipContent>
               </Tooltip>
             )}
@@ -189,26 +188,26 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
                   <PhoneOff className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Encerrar</TooltipContent>
+              <TooltipContent>End</TooltipContent>
             </Tooltip>
           </div>
         </div>
 
         {video.state.upgradeIncoming && (
           <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
-            <p className="text-sm">O cliente quer ativar o vídeo.</p>
+            <p className="text-sm">The remote party wants to enable video.</p>
             <div className="flex gap-2">
               <Button size="sm" disabled={video.busy} onClick={() => video.accept()}>
-                Aceitar
+                Accept
               </Button>
               <Button size="sm" variant="outline" disabled={video.busy} onClick={() => video.reject()}>
-                Recusar
+                Reject
               </Button>
             </div>
           </div>
         )}
         {video.state.upgradeOutgoing && !video.state.peerVideo && (
-          <p className="text-xs text-muted-foreground">Aguardando o cliente aceitar o vídeo…</p>
+          <p className="text-xs text-muted-foreground">Waiting for the remote party to accept video…</p>
         )}
 
         {showVideo && (
@@ -226,7 +225,7 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
               <button
                 type="button"
                 onClick={() => setManualRot((r) => (r + 90) % 360)}
-                title="Girar vídeo"
+                title="Rotate video"
                 className="absolute right-2 top-2 rounded bg-black/60 p-1 text-white hover:bg-black/80"
               >
                 <RotateCw className="h-4 w-4" />

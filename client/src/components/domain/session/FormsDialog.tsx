@@ -12,24 +12,24 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { listNativeForms, type NativeFormInfo } from "@/services/sessions";
+import { copyText } from "@/lib/clipboard";
 
-// Rótulos dos campos padrão dos modelos do app (nome interno → texto).
+// Display labels for the app's standard form-template fields.
 const FIELD_LABELS: Record<string, string> = {
-  full_name: "Nome",
-  first_name: "Nome",
-  last_name: "Sobrenome",
-  phone_number: "Telefone",
-  email: "E-mail",
-  address: "Endereço",
-  city: "Cidade",
-  zip_code: "CEP",
+  full_name: "Name",
+  first_name: "First name",
+  last_name: "Last name",
+  phone_number: "Phone",
+  email: "Email",
+  address: "Address",
+  city: "City",
+  zip_code: "Postal code",
 };
 
 const typeLabel = (t?: string) =>
-  t === "template" ? "Modelo" : t?.startsWith("ai_form") ? "Gerado por IA" : t || "Formulário";
+  t === "template" ? "Template" : t?.startsWith("ai_form") ? "AI generated" : t || "Form";
 
-// Campos do formulário: os *_visible ligados do modelo, os custom_fields do
-// formulário de IA, ou os nomes vistos nas respostas.
+// Form fields come from enabled template fields, AI-form custom fields, or response field names.
 const fieldsOf = (f: NativeFormInfo): string[] => {
   const d = f.data ?? {};
   const custom = Array.isArray(d.custom_fields)
@@ -44,17 +44,17 @@ const fieldsOf = (f: NativeFormInfo): string[] => {
 };
 
 const fmtDate = (ms?: number) =>
-  ms ? new Date(ms).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—";
+  ms ? new Date(ms).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" }) : "—";
 
-// Corpo pronto para POST /api/sessions/{sid}/messages/native-form.
+// Request body ready for POST /api/sessions/{sid}/messages/native-form.
 const sendExample = (f: NativeFormInfo) =>
   JSON.stringify(
     {
       to: "5561999999999",
       flowId: f.flowId,
       ...(f.formType && f.formType !== "template" ? { formType: f.formType } : {}),
-      body: f.body || "Compartilhe seus dados.",
-      cta: f.cta || "Preencher formulário",
+      body: f.body || "Share your details.",
+      cta: f.cta || "Complete form",
       ...(f.screen ? { screen: f.screen } : {}),
       ...(f.data ? { data: f.data } : {}),
     },
@@ -66,11 +66,11 @@ const CopyButton = ({ text, label, title }: { text: string; label: string; title
   const [done, setDone] = useState(false);
   const copy = async () => {
     try {
-      await navigator.clipboard?.writeText(text);
+      await copyText(text);
       setDone(true);
       setTimeout(() => setDone(false), 1500);
     } catch {
-      toast.error("Não foi possível copiar");
+      toast.error("Could not copy");
     }
   };
   return (
@@ -103,8 +103,7 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
     [sid],
   );
 
-  // Abre carregando e atualiza a cada 10 s: o formulário enviado pelo celular
-  // aparece sozinho enquanto o pop-up está aberto.
+  // Load immediately and refresh every 10 seconds so forms sent by the phone appear while the dialog is open.
   useEffect(() => {
     if (!open) return;
     void load();
@@ -115,29 +114,29 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" title="Formulários nativos do WhatsApp Business">
+        <Button variant="outline" size="sm" title="Native WhatsApp Business forms">
           <ClipboardList className="h-4 w-4" />
-          <span className="hidden sm:inline">Formulários</span>
+          <span className="hidden sm:inline">Forms</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Formulários do WhatsApp Business</DialogTitle>
+          <DialogTitle>WhatsApp Business forms</DialogTitle>
           <DialogDescription>
-            Formulários criados no app (Ferramentas comerciais → Formulários) que esta conta já enviou. Copie o
-            ID e use em <code className="font-mono">POST /messages/native-form</code>. Formulário novo aparece
-            aqui depois que você enviá-lo uma vez pelo celular.
+            Forms created in the app that this account has already sent. Copy the ID and use it with{" "}
+            <code className="font-mono">POST /messages/native-form</code>. A new form appears after it is sent
+            once from the phone.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex justify-end">
           <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Atualizar
+            Refresh
           </Button>
         </div>
 
-        {error && <p className="text-sm text-destructive">Erro ao carregar: {error}</p>}
+        {error && <p className="text-sm text-destructive">Could not load forms: {error}</p>}
 
         {forms === null && loading ? (
           <div className="flex justify-center py-8">
@@ -145,8 +144,8 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
           </div>
         ) : forms && forms.length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Nenhum formulário ainda. No celular desta conta, crie um formulário em Ferramentas comerciais →
-            Formulários e envie para qualquer contato. Ele aparece aqui em alguns segundos.
+            No forms yet. Create a form in Business tools → Forms on this account's phone and send it to any
+            contact. It will appear here within a few seconds.
           </div>
         ) : (
           <div className="space-y-3">
@@ -156,9 +155,9 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
                 <div key={f.flowId} className="space-y-2 rounded-lg border p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{f.body || f.flowName || "Formulário"}</div>
+                      <div className="truncate font-medium">{f.body || f.flowName || "Form"}</div>
                       <div className="text-xs text-muted-foreground">
-                        Botão: {f.cta || "Preencher formulário"}
+                        Button: {f.cta || "Complete form"}
                         {f.flowName ? ` · ${f.flowName}` : ""}
                       </div>
                     </div>
@@ -168,11 +167,11 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-medium text-muted-foreground">ID:</span>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">{f.flowId}</code>
-                    <CopyButton text={f.flowId} label="Copiar ID" title="Copiar o flowId" />
+                    <CopyButton text={f.flowId} label="Copy ID" title="Copy the flowId" />
                     <CopyButton
                       text={sendExample(f)}
-                      label="Copiar envio"
-                      title="Copiar o corpo pronto para POST /messages/native-form"
+                      label="Copy request"
+                      title="Copy the request body for POST /messages/native-form"
                     />
                   </div>
 
@@ -187,9 +186,9 @@ export const FormsDialog = ({ sid }: { sid: string }) => {
                   )}
 
                   <div className="text-xs text-muted-foreground">
-                    Enviado {f.sentCount}× · último {fmtDate(f.lastSentAt)} · {f.responseCount}{" "}
-                    {f.responseCount === 1 ? "resposta" : "respostas"}
-                    {f.lastResponseAt ? ` · última ${fmtDate(f.lastResponseAt)}` : ""}
+                    Sent {f.sentCount}× · last {fmtDate(f.lastSentAt)} · {f.responseCount}{" "}
+                    {f.responseCount === 1 ? "response" : "responses"}
+                    {f.lastResponseAt ? ` · latest ${fmtDate(f.lastResponseAt)}` : ""}
                   </div>
                 </div>
               );

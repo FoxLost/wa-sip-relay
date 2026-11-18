@@ -29,25 +29,26 @@ type SIPGateway struct {
 	log *slog.Logger
 
 	mu             sync.RWMutex
-	registrations  map[string]*sipRegistration // keyed by sip_user (modelo 1: PBX registra em nós)
-	activeCalls    map[string]*sipCall         // keyed by SIP Call-ID (SIP->WhatsApp)
-	inboundDialogs map[string]*inboundDialog   // keyed by SIP Call-ID (WhatsApp->SIP)
-	// WhatsApp->SIP ainda tocando no PBX, por callId do WhatsApp: cancela o INVITE
-	// quando a chamada é atendida por outro lado (painel, ponte de voz).
+	registrations  map[string]*sipRegistration // keyed by sip_user (mode 1: PBX registers with us)
+	activeCalls    map[string]*sipCall         // keyed by SIP Call-ID (SIP -> WhatsApp)
+	inboundDialogs map[string]*inboundDialog   // keyed by SIP Call-ID (WhatsApp -> SIP)
+	// WhatsApp -> SIP calls still ringing at the PBX, keyed by WhatsApp call ID.
+	// Cancel the INVITE when another client answers the call.
 	inboundRinging map[string]*inboundRing
-	extRegs        map[string]*sipUACRegistrar // keyed by session id (modelo 2: nós registramos no PBX)
-	agentCalls     map[string]*sipAgentCall    // keyed by id "sip-…" (modo agente: SIP entrante atendido)
-	agentDialogs   map[string]*sipAgentCall    // keyed by SIP Call-ID, vive até o diálogo acabar
+	extRegs        map[string]*sipUACRegistrar // keyed by session ID (mode 2: we register with the PBX)
+	agentCalls     map[string]*sipAgentCall    // keyed by "sip-…" ID (agent mode: answered inbound SIP)
+	agentDialogs   map[string]*sipAgentCall    // keyed by SIP Call-ID and retained until the dialog ends
 }
 
 type sipRegistration struct {
-	sourceIP   string // IP de onde veio o REGISTER (INVITE desse IP dispensa nova senha)
+	sourceIP   string // IP address that sent REGISTER; INVITEs from it do not need another password
 	sipUser    string
 	sessionID  string
 	contact    string
+	clientName string
 	contactURI sip.Uri
 	transport  string
-	expiresAt  time.Time // quando este registro expira; registros vencidos são ignorados/limpos
+	expiresAt  time.Time // expired registrations are ignored and removed
 }
 
 func (r *sipRegistration) expired() bool {
@@ -217,10 +218,14 @@ func (gw *SIPGateway) handleRegister(req *sip.Request, tx sip.ServerTransaction)
 
 	contactHeader := req.Contact()
 	contact := ""
+	clientName := ""
 	var contactURI sip.Uri
 	if contactHeader != nil {
 		contact = contactHeader.Address.String()
 		contactURI = contactHeader.Address
+	}
+	if userAgent := req.GetHeader("User-Agent"); userAgent != nil {
+		clientName = strings.TrimSpace(userAgent.Value())
 	}
 
 	// Expires do header (ou do param do Contact). 0 = DESREGISTRAR.
@@ -257,8 +262,9 @@ func (gw *SIPGateway) handleRegister(req *sip.Request, tx sip.ServerTransaction)
 		sipUser:    sipUser,
 		sessionID:  sess.id,
 		contact:    contact,
+		clientName: clientName,
 		contactURI: contactURI,
-		// margem de 32s p/ tolerar atraso do re-REGISTER antes de considerar vencido.
+		// Allow a 32-second re-registration delay before treating the binding as expired.
 		expiresAt: time.Now().Add(time.Duration(expires+32) * time.Second),
 	}
 	gw.mu.Unlock()

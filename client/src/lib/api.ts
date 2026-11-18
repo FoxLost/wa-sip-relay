@@ -7,7 +7,7 @@ const baseHeaders = (): HeadersInit => ({
   "Content-Type": "application/json",
 });
 
-// Em 401 (key inválida/expirada) limpa a auth e volta pra tela de login.
+// Clear expired or invalid authentication and return to the login screen after a 401.
 const guard = (status: number) => {
   if (status === 401) {
     clearAuth();

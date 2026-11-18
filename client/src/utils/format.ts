@@ -1,15 +1,13 @@
 import type { CallStatus } from "@/types/call";
 
-// phoneFromJid extrai e formata o número de um JID do WhatsApp
-// ("5561999999999@s.whatsapp.net", "5561999999999:12@s.whatsapp.net", com
-// sufixo de device/LID etc.). Formata BR (+55 (DD) 9XXXX-XXXX) quando reconhece;
-// senão devolve "+<dígitos>". String vazia quando não há número.
+// Extract a phone number from a WhatsApp JID, including device and LID suffixes. Format recognized
+// Brazilian numbers as +55 (area) number and return other numbers as +digits.
 export const phoneFromJid = (jid: string): string => {
   if (!jid) return "";
   const user = jid.split("@")[0].split(":")[0].split(".")[0];
   const d = user.replace(/\D/g, "");
   if (!d) return "";
-  // Brasil: 55 + DDD(2) + 8 ou 9 dígitos
+  // Brazil: 55 + two-digit area code + eight or nine digits.
   if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
     const ddd = d.slice(2, 4);
     const rest = d.slice(4);

@@ -12,15 +12,16 @@ import { SIPDialog } from "./SIPDialog";
 import { WebhookDialog } from "./WebhookDialog";
 import { logoutSession, pairSession, setRecording } from "@/services/sessions";
 import { phoneFromJid } from "@/utils/format";
+import { copyText } from "@/lib/clipboard";
 import type { SessionInfo, SessionState } from "@/types/session";
 
 const statusLabel: Record<SessionState, string> = {
-  open: "Conectado",
-  qr: "Ler QR",
-  connecting: "Conectando…",
-  logged_out: "Desconectado",
-  pairing_code: "Código de pareamento",
-  passkey_request: "Confirmar passkey",
+  open: "Connected",
+  qr: "Scan QR",
+  connecting: "Connecting…",
+  logged_out: "Disconnected",
+  pairing_code: "Pairing code",
+  passkey_request: "Confirm passkey",
 };
 
 const statusVariant: Record<SessionState, "success" | "secondary" | "muted" | "destructive"> = {
@@ -39,11 +40,11 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
 
   const copyId = async () => {
     try {
-      await navigator.clipboard?.writeText(session.id);
+      await copyText(session.id);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Não foi possível copiar");
+      toast.error("Could not copy");
     }
   };
 
@@ -85,15 +86,15 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
             <span className="font-medium text-foreground">{connectedPhone}</span>
           </div>
         ) : lastPhone ? (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Último número que esteve conectado">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Last connected number">
             <Phone className="h-3.5 w-3.5" />
-            <span>Último número: <span className="font-medium">{lastPhone}</span></span>
+            <span>Last number: <span className="font-medium">{lastPhone}</span></span>
           </div>
         ) : null}
         <button
           type="button"
-          onClick={copyId}
-          title="Copiar ID da sessão (use na API)"
+          onClick={() => void copyId()}
+          title="Copy the session ID for API use"
           className="flex w-fit items-center gap-1.5 rounded-md text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
           <span className="font-medium">ID:</span>
@@ -105,12 +106,12 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
         {session.paired && (
           <label className="mr-1 flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <Mic className="h-4 w-4" />
-            <span className="hidden sm:inline">Gravar</span>
+            <span className="hidden sm:inline">Record</span>
             <Switch
               checked={session.recording}
               onCheckedChange={toggleRecording}
               disabled={recBusy}
-              aria-label="Gravar chamadas desta conta"
+              aria-label="Record calls for this account"
             />
           </label>
         )}
@@ -125,16 +126,16 @@ export const SessionHeader = ({ session }: { session: SessionInfo }) => {
             variant="outline"
             size="sm"
             disabled={busy}
-            title="Desconectar"
-            onClick={() => run(() => logoutSession(session.id))}
+            title="Disconnect"
+            onClick={() => void run(() => logoutSession(session.id))}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
-            <span className="hidden sm:inline">Desconectar</span>
+            <span className="hidden sm:inline">Disconnect</span>
           </Button>
         ) : (
-          <Button size="sm" disabled={busy} title="Reativar" onClick={() => run(() => pairSession(session.id))}>
+          <Button size="sm" disabled={busy} title="Reconnect" onClick={() => void run(() => pairSession(session.id))}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
-            <span className="hidden sm:inline">Reativar</span>
+            <span className="hidden sm:inline">Reconnect</span>
           </Button>
         )}
       </div>

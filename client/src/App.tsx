@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LanguageSelector } from "@/components/shared/LanguageSelector";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { RelayDashboard } from "@/pages/RelayDashboard";
 import { createSession, deleteSession, logoutSession, pairSession } from "@/services/sessions";
@@ -26,12 +27,14 @@ import {
 import { useTheme } from "@/stores/theme";
 import { phoneFromJid } from "@/utils/format";
 import { apiGet } from "@/lib/api";
+import { useLanguage } from "@/lib/i18n";
 
 type RelayConfig = {
   maxAccounts: number;
 };
 
 export const App = () => {
+  const { t } = useLanguage();
   const sessions = useSessions((state) => state.sessions);
   const activeId = useSessions((state) => state.activeId);
   const theme = useTheme((state) => state.theme);
@@ -55,7 +58,7 @@ export const App = () => {
     try {
       await action();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Operation failed");
+      toast.error(error instanceof Error ? error.message : t("Operation failed"));
     } finally {
       setBusy(false);
     }
@@ -70,7 +73,7 @@ export const App = () => {
       setActiveSession(created.id);
       setAccountName("");
       setCreateOpen(false);
-      toast.success(`${name} created`);
+      toast.success(t("{{name}} created", { name }));
     });
   };
 
@@ -81,16 +84,19 @@ export const App = () => {
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
             <div>
               <h1 className="text-xl font-semibold">WA SIP Relay</h1>
-              <p className="text-sm text-muted-foreground">WhatsApp voice accounts bridged to SIP.</p>
+              <p className="text-sm text-muted-foreground">{t("WhatsApp voice accounts bridged to SIP.")}</p>
             </div>
-            <Button
-              size="sm"
-              disabled={busy || atLimit}
-              onClick={() => setCreateOpen(true)}
-              title={atLimit ? `Account limit reached (${maxAccounts})` : undefined}
-            >
-              <PlusCircle className="h-4 w-4" /> Add account
-            </Button>
+            <div className="flex items-center gap-2">
+              <LanguageSelector />
+              <Button
+                size="sm"
+                disabled={busy || atLimit}
+                onClick={() => setCreateOpen(true)}
+                title={atLimit ? t("Account limit reached ({{count}})", { count: maxAccounts }) : undefined}
+              >
+                <PlusCircle className="h-4 w-4" /> {t("Add account")}
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -99,20 +105,20 @@ export const App = () => {
             <div className="mx-auto flex max-w-lg flex-col items-center gap-4 rounded-xl border p-8 text-center">
               <PlusCircle className="h-8 w-8 text-muted-foreground" />
               <div>
-                <h2 className="font-medium">Create a WhatsApp relay account</h2>
+                <h2 className="font-medium">{t("Create a WhatsApp relay account")}</h2>
                 <p className="text-sm text-muted-foreground">
-                  Each linked account receives independent SIP credentials and routing.
+                  {t("Each linked account receives independent SIP credentials and routing.")}
                 </p>
               </div>
               <Button disabled={busy || atLimit} onClick={() => setCreateOpen(true)}>
-                <PlusCircle className="h-4 w-4" /> Create account
+                <PlusCircle className="h-4 w-4" /> {t("Create account")}
               </Button>
             </div>
           ) : (
             <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
               <aside className="h-fit space-y-3 rounded-xl border p-3">
                 <div className="flex items-center justify-between px-1">
-                  <div className="text-sm font-medium">WhatsApp accounts</div>
+                  <div className="text-sm font-medium">{t("WhatsApp accounts")}</div>
                   <div className="text-xs text-muted-foreground">
                     {sessions.length}{maxAccounts > 0 ? ` / ${maxAccounts}` : ""}
                   </div>
@@ -133,10 +139,10 @@ export const App = () => {
                         <div className="truncate text-sm font-medium">{item.name}</div>
                         <div className="mt-1 flex items-center justify-between gap-2">
                           <span className="truncate text-xs text-muted-foreground">
-                            {phoneFromJid(item.jid || item.lastJid) || "Not linked"}
+                            {phoneFromJid(item.jid || item.lastJid) || t("Not linked")}
                           </span>
                           <Badge variant={item.paired ? "success" : "secondary"}>
-                            {item.paired ? "Online" : "Pair"}
+                            {item.paired ? t("Online") : t("Pair")}
                           </Badge>
                         </div>
                       </button>
@@ -152,11 +158,11 @@ export const App = () => {
                       <div className="flex items-center gap-2">
                         <div className="font-medium">{session.name}</div>
                         <Badge variant={session.paired ? "success" : "secondary"}>
-                          {session.paired ? "WhatsApp connected" : "Pairing required"}
+                          {session.paired ? t("WhatsApp connected") : t("Pairing required")}
                         </Badge>
                       </div>
                       <div className="mt-1 text-sm text-muted-foreground">
-                        {phoneFromJid(session.jid || session.lastJid) || "No linked number"}
+                        {phoneFromJid(session.jid || session.lastJid) || t("No linked number")}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -167,7 +173,7 @@ export const App = () => {
                           disabled={busy}
                           onClick={() => void run(() => logoutSession(session.id))}
                         >
-                          <LogOut className="h-4 w-4" /> Unlink
+                          <LogOut className="h-4 w-4" /> {t("Unlink")}
                         </Button>
                       ) : (
                         <Button
@@ -176,7 +182,7 @@ export const App = () => {
                           disabled={busy}
                           onClick={() => void run(() => pairSession(session.id))}
                         >
-                          <RefreshCw className="h-4 w-4" /> Pair
+                          <RefreshCw className="h-4 w-4" /> {t("Pair")}
                         </Button>
                       )}
                       <Button
@@ -184,12 +190,12 @@ export const App = () => {
                         variant="ghost"
                         disabled={busy}
                         onClick={() => {
-                          if (window.confirm(`Delete ${session.name} and its stored WhatsApp device?`)) {
+                          if (window.confirm(t("Delete {{name}} and its stored WhatsApp device?", { name: session.name }))) {
                             void run(() => deleteSession(session.id));
                           }
                         }}
                       >
-                        <Trash2 className="h-4 w-4" /> Delete
+                        <Trash2 className="h-4 w-4" /> {t("Delete")}
                       </Button>
                     </div>
                   </div>
@@ -209,13 +215,13 @@ export const App = () => {
         <DialogContent>
           <form className="space-y-4" onSubmit={(event) => void createAccount(event)}>
             <DialogHeader>
-              <DialogTitle>Add WhatsApp account</DialogTitle>
+              <DialogTitle>{t("Add WhatsApp account")}</DialogTitle>
               <DialogDescription>
-                A separate QR code and SIP identity will be generated for this account.
+                {t("A separate QR code and SIP identity will be generated for this account.")}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
-              <Label htmlFor="account-name">Account name</Label>
+              <Label htmlFor="account-name">{t("Account name")}</Label>
               <Input
                 id="account-name"
                 value={accountName}
@@ -227,11 +233,11 @@ export const App = () => {
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" disabled={busy} onClick={() => setCreateOpen(false)}>
-                Cancel
+                {t("Cancel")}
               </Button>
               <Button type="submit" disabled={busy || atLimit}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-                Create
+                {t("Create")}
               </Button>
             </DialogFooter>
           </form>

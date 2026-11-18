@@ -1,14 +1,13 @@
 import { getApiBase, getApiKey } from "@/lib/auth";
 import { VideoSender, VideoReceiver, videoSupported } from "./video-codec";
 
-// GroupVideoBridge transporta vídeo H264 da chamada em GRUPO entre o navegador e o
-// gateway, pelo WS /calls/group/video-ws. Envia a câmera do atendente (VideoSender)
-// e recebe o vídeo de cada participante (um VideoReceiver por pid), expondo um
-// MediaStream por participante p/ renderizar.
+// GroupVideoBridge carries H264 video for group calls between the browser and the gateway
+// through /calls/group/video-ws. It sends the operator camera through VideoSender and exposes
+// one VideoReceiver MediaStream per participant.
 //
-// Protocolo binário (igual ao backend handleGroupVideoWS):
-//   gateway → navegador: [1 byte len(pid)][pid ascii][access unit H264 annexb]
-//   navegador → gateway: access unit H264 annexb puro (câmera)
+// Binary protocol, matching handleGroupVideoWS:
+//   gateway -> browser: [1-byte pid length][ASCII pid][H264 Annex B access unit]
+//   browser -> gateway: raw H264 Annex B camera access unit
 export class GroupVideoBridge {
   private ws: WebSocket | null = null;
   private sender: VideoSender | null = null;
@@ -19,17 +18,17 @@ export class GroupVideoBridge {
   private lastFrameAt = new Map<string, number>();
   private staleTimer: ReturnType<typeof setInterval> | null = null;
 
-  /** Stream local da câmera (preview). Disponível após connect(). */
+  /** Local camera preview, available after connect(). */
   localStream: MediaStream | null = null;
 
-  /** Chamado quando o vídeo de um participante aparece (novo pid). */
+  /** Called when a participant video stream appears. */
   onParticipantStream: ((pid: string, stream: MediaStream) => void) | null = null;
-  /** Chamado quando um participante some (stream encerrado ou saiu da chamada). */
+  /** Called when a participant stream closes or leaves the call. */
   onParticipantGone: ((pid: string) => void) | null = null;
-  /** Chamado quando a orientação da câmera de um participante muda (0..3 quartos de volta). */
+  /** Called when participant camera orientation changes in clockwise quarter turns. */
   onParticipantOrientation: ((pid: string, orientation: number) => void) | null = null;
 
-  /** Última orientação conhecida do participante (0 se nenhuma). */
+  /** Last known participant orientation, or zero when unknown. */
   orientationOf(pid: string): number {
     return this.orientations.get(pid) ?? 0;
   }
@@ -41,7 +40,7 @@ export class GroupVideoBridge {
   }
 
   async connect(): Promise<void> {
-    // Câmera do atendente.
+    // Operator camera.
     this.localStream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 } },
       audio: false,
@@ -59,7 +58,7 @@ export class GroupVideoBridge {
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error("falha ao conectar o vídeo do grupo"));
+      ws.onerror = () => reject(new Error("could not connect group video"));
       ws.onclose = () => {
         if (!this.closed) this.close();
       };
@@ -69,8 +68,7 @@ export class GroupVideoBridge {
       };
     });
 
-    // Rede de segurança: tile que fica 8s sem frame (participante saiu/caiu sem o
-    // gateway avisar) some em vez de ficar congelado no último quadro.
+    // Drop a participant tile after eight seconds without frames instead of leaving a frozen frame.
     this.staleTimer = setInterval(() => {
       const now = Date.now();
       for (const [pid, at] of this.lastFrameAt) {
@@ -78,7 +76,7 @@ export class GroupVideoBridge {
       }
     }, 2000);
 
-    // Envia a câmera (encode annexb → WS binário).
+    // Encode and send the operator camera as binary Annex B access units.
     const track = this.localStream.getVideoTracks()[0];
     if (track) {
       this.sender = new VideoSender(track, (au) => {
@@ -90,9 +88,9 @@ export class GroupVideoBridge {
   }
 
   /**
-   * Controle (texto JSON) do gateway:
-   *   keyframe_request — um participante pediu keyframe da nossa câmera → força IDR.
-   *   video_state      — participante ligou(1)/desligou(0/6) a câmera → some o tile.
+   * Gateway JSON control messages:
+   *   keyframe_request - a participant requested an IDR from our camera.
+   *   video_state      - a participant enabled or disabled their camera.
    */
   private onControl(raw: string): void {
     let msg: { type?: string; pid?: string; state?: number; orientation?: number };
@@ -114,7 +112,7 @@ export class GroupVideoBridge {
     }
   }
 
-  /** Fecha o decoder do participante e some com o tile (câmera desligada ou saiu). */
+  /** Close a participant decoder and remove its tile when video stops or the participant leaves. */
   private dropParticipant(pid: string): void {
     const rx = this.receivers.get(pid);
     if (rx) {
@@ -129,7 +127,7 @@ export class GroupVideoBridge {
     this.lastFrameAt.delete(pid);
   }
 
-  /** Pede ao gateway um keyframe (PLI) do participante — no máximo 1/s por pid. */
+  /** Request a participant keyframe through the gateway, limited to once per second per participant. */
   private requestPli(pid: string): void {
     const now = Date.now();
     if (now - (this.lastPli.get(pid) ?? 0) < 1000) return;

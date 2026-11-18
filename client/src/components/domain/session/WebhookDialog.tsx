@@ -26,23 +26,23 @@ import {
   type WebhookItem,
 } from "@/services/webhook";
 
-// Tipos de evento que o webhook da sessão entrega (nenhum marcado = todos).
+// Session webhook event types. Selecting none delivers every event.
 const EVENTS: { id: string; label: string }[] = [
-  { id: "message", label: "Mensagens" },
-  { id: "receipt", label: "Entrega/leitura" },
-  { id: "reaction", label: "Reações" },
-  { id: "deleted", label: "Apagadas" },
-  { id: "poll_vote", label: "Votos de enquete" },
-  { id: "event_response", label: "Respostas de evento" },
-  { id: "form_response", label: "Formulários" },
-  { id: "group_participants", label: "Participantes de grupo" },
-  { id: "view_once", label: "Visualização única" },
-  { id: "session_status", label: "Status da sessão" },
-  { id: "broadcast", label: "Disparos" },
-  { id: "recording", label: "Gravações" },
-  { id: "restriction", label: "Restrições" },
-  { id: "call_peer_mute", label: "Mudo na chamada" },
-  { id: "call_hand_raise", label: "Mão levantada" },
+  { id: "message", label: "Messages" },
+  { id: "receipt", label: "Delivery/read receipts" },
+  { id: "reaction", label: "Reactions" },
+  { id: "deleted", label: "Deleted messages" },
+  { id: "poll_vote", label: "Poll votes" },
+  { id: "event_response", label: "Event responses" },
+  { id: "form_response", label: "Forms" },
+  { id: "group_participants", label: "Group participants" },
+  { id: "view_once", label: "View once" },
+  { id: "session_status", label: "Session status" },
+  { id: "broadcast", label: "Broadcasts" },
+  { id: "recording", label: "Recordings" },
+  { id: "restriction", label: "Restrictions" },
+  { id: "call_peer_mute", label: "Call peer muted" },
+  { id: "call_hand_raise", label: "Hand raised" },
 ];
 
 const eventLabel = (id: string) => EVENTS.find((e) => e.id === id)?.label ?? id;
@@ -55,7 +55,7 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
   const [busy, setBusy] = useState(false);
   const [hooks, setHooks] = useState<WebhookItem[]>([]);
   const [max, setMax] = useState(10);
-  // null = lista; "new" = criando; id = editando
+  // null = list, "new" = create, otherwise the webhook ID being edited
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({ ...emptyDraft });
 
@@ -70,7 +70,7 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
     [sid],
   );
 
-  // carrega já na montagem p/ o botão refletir se há webhook configurado
+  // Load on mount so the trigger reflects whether any webhook is configured.
   useEffect(() => {
     load();
   }, [load, open]);
@@ -115,21 +115,21 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
   const save = async () => {
     const url = draft.url.trim();
     if (!/^https?:\/\//i.test(url)) {
-      toast.error("Informe uma URL http(s) válida");
+      toast.error("Enter a valid HTTP(S) URL");
       return;
     }
     const body: WebhookInput = { name: draft.name.trim(), url, events: draft.events, ignoreGroups: draft.ignoreGroups };
     if (draft.secret.trim()) body.secret = draft.secret.trim();
     const done = await run(
       () => (editing === "new" ? createWebhook(sid, body) : updateWebhook(sid, editing!, body)),
-      "Webhook salvo",
+      "Webhook saved",
     );
     if (done) setEditing(null);
   };
 
   const remove = (h: WebhookItem) => {
-    if (!window.confirm(`Remover o webhook ${h.name || h.url}?`)) return;
-    run(() => deleteWebhook(sid, h.id), "Webhook removido").then((ok) => ok && setEditing(null));
+    if (!window.confirm(`Remove webhook ${h.name || h.url}?`)) return;
+    run(() => deleteWebhook(sid, h.id), "Webhook removed").then((ok) => ok && setEditing(null));
   };
 
   const clearSecret = (h: WebhookItem) =>
@@ -142,15 +142,15 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
           events: draft.events,
           ignoreGroups: draft.ignoreGroups,
         }),
-      "Secret removido",
+      "Secret removed",
     );
 
   const test = async (h: WebhookItem) => {
     setBusy(true);
     try {
       const r = await testWebhook(sid, h.id);
-      if (r.ok) toast.success(`Teste entregue (HTTP ${r.status})`);
-      else toast.error(r.error ? `Falhou: ${r.error}` : `Falhou: HTTP ${r.status}`);
+      if (r.ok) toast.success(`Test delivered (HTTP ${r.status})`);
+      else toast.error(r.error ? `Failed: ${r.error}` : `Failed: HTTP ${r.status}`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -160,10 +160,10 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
 
   const stateBadge = (h: WebhookItem) => {
     const st = h.status?.state ?? "closed";
-    if (st === "closed") return <Badge variant="success">Ativo</Badge>;
+    if (st === "closed") return <Badge variant="success">Active</Badge>;
     return (
       <Badge variant="destructive" title={h.status?.disabledReason}>
-        {st === "open" ? "Pausado (falhas)" : "Desativado (falhas)"}
+        {st === "open" ? "Paused after failures" : "Disabled after failures"}
       </Badge>
     );
   };
@@ -172,7 +172,7 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
     <div className="space-y-3">
       {hooks.length === 0 && (
         <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-          Nenhum webhook nesta sessão.
+          No webhooks for this session.
         </p>
       )}
       {hooks.map((h) => (
@@ -180,39 +180,39 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 space-y-0.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{h.name || (h.id === "default" ? "Principal" : "Webhook")}</span>
+                <span className="text-sm font-medium">{h.name || (h.id === "default" ? "Primary" : "Webhook")}</span>
                 {stateBadge(h)}
               </div>
               <p className="break-all text-xs text-muted-foreground">{h.url}</p>
             </div>
             <div className="flex shrink-0 gap-1">
-              <Button size="icon" variant="ghost" disabled={busy} title="Enviar teste" onClick={() => test(h)}>
+              <Button size="icon" variant="ghost" disabled={busy} title="Send test" onClick={() => test(h)}>
                 <Send className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" disabled={busy} title="Editar" onClick={() => startEdit(h)}>
+              <Button size="icon" variant="ghost" disabled={busy} title="Edit" onClick={() => startEdit(h)}>
                 <Pencil className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" disabled={busy} title="Remover" onClick={() => remove(h)}>
+              <Button size="icon" variant="ghost" disabled={busy} title="Remove" onClick={() => remove(h)}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <div className="flex flex-wrap gap-1">
             <Badge variant="muted">
-              {h.events?.length ? h.events.map(eventLabel).join(", ") : "Todos os eventos"}
+              {h.events?.length ? h.events.map(eventLabel).join(", ") : "All events"}
             </Badge>
-            {h.ignoreGroups && <Badge variant="muted">Ignora grupos</Badge>}
-            {h.hasSecret && <Badge variant="muted">Assinado</Badge>}
+            {h.ignoreGroups && <Badge variant="muted">Groups ignored</Badge>}
+            {h.hasSecret && <Badge variant="muted">Signed</Badge>}
           </div>
           {h.status && h.status.state !== "closed" && (
             <Button
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() => run(() => reenableWebhook(sid, h.id), "Webhook reativado")}
+              onClick={() => run(() => reenableWebhook(sid, h.id), "Webhook re-enabled")}
             >
               <RotateCcw className="h-4 w-4" />
-              Reativar
+              Re-enable
             </Button>
           )}
         </div>
@@ -223,11 +223,11 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
   const form = (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label>Nome (opcional)</Label>
+        <Label>Name (optional)</Label>
         <Input
           value={draft.name}
           onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-          placeholder="ex.: n8n, CRM"
+          placeholder="For example n8n or CRM"
         />
       </div>
       <div className="space-y-1">
@@ -235,21 +235,21 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
         <Input
           value={draft.url}
           onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))}
-          placeholder="https://meu-sistema/webhook/astracalls"
+          placeholder="https://your-system.example/webhook/wa-sip-relay"
         />
       </div>
       <div className="space-y-1">
-        <Label>Secret (opcional)</Label>
+        <Label>Secret (optional)</Label>
         <div className="flex gap-2">
           <Input
             value={draft.secret}
             onChange={(e) => setDraft((d) => ({ ...d, secret: e.target.value }))}
             type="password"
-            placeholder={current?.hasSecret ? "configurado — deixe vazio p/ manter" : "assina com X-Webhook-Signature"}
+            placeholder={current?.hasSecret ? "configured — leave blank to keep it" : "signs with X-Webhook-Signature"}
           />
           {current?.hasSecret && (
             <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => clearSecret(current)}>
-              Remover
+              Remove
             </Button>
           )}
         </div>
@@ -257,23 +257,23 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
 
       <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border p-3">
         <span className="space-y-0.5">
-          <span className="block text-sm font-medium">Ignorar grupos</span>
+          <span className="block text-sm font-medium">Ignore groups</span>
           <span className="block text-xs text-muted-foreground">
-            Não envia nenhum evento de grupo (mensagens, confirmações, reações, participantes…). Só conversas
-            individuais.
+            Do not send group events such as messages, receipts, reactions, or participant changes.
+            Only individual conversations are delivered.
           </span>
         </span>
         <Switch
           checked={draft.ignoreGroups}
           onCheckedChange={(v) => setDraft((d) => ({ ...d, ignoreGroups: v }))}
-          aria-label="Ignorar grupos"
+          aria-label="Ignore groups"
         />
       </label>
 
       <div className="space-y-2">
-        <Label>Eventos</Label>
+        <Label>Events</Label>
         <p className="text-xs text-muted-foreground">
-          {draft.events.length === 0 ? "Nenhum marcado = envia todos." : `${draft.events.length} selecionado(s).`}
+          {draft.events.length === 0 ? "None selected means all events." : `${draft.events.length} selected.`}
         </p>
         <div className="flex flex-wrap gap-2">
           {EVENTS.map((e) => {
@@ -309,11 +309,11 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {editing === null ? "Webhooks da sessão" : editing === "new" ? "Novo webhook" : "Editar webhook"}
+            {editing === null ? "Session webhooks" : editing === "new" ? "New webhook" : "Edit webhook"}
           </DialogTitle>
           <DialogDescription>
-            Cada webhook recebe os eventos desta conta por POST (JSON) no formato{" "}
-            <code>{"{ session, event, timestamp, data }"}</code>, com filtros próprios.
+            Each webhook receives this account's events as JSON POST requests in the format{" "}
+            <code>{"{ session, event, timestamp, data }"}</code>, with independent filters.
           </DialogDescription>
         </DialogHeader>
 
@@ -327,18 +327,18 @@ export const WebhookDialog = ({ sid }: { sid: string }) => {
               </span>
               <Button disabled={busy || hooks.length >= max} onClick={startNew}>
                 <Plus className="h-4 w-4" />
-                Adicionar webhook
+                Add webhook
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" disabled={busy} onClick={() => setEditing(null)}>
                 <ArrowLeft className="h-4 w-4" />
-                Voltar
+                Back
               </Button>
               <Button disabled={busy} onClick={save}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Salvar
+                Save
               </Button>
             </>
           )}

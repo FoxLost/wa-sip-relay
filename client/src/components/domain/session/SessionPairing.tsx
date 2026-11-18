@@ -13,9 +13,11 @@ import {
   runPasskeyAssertion,
   EXTENSION_DOWNLOAD_URL,
 } from "@/lib/passkey";
+import { useLanguage } from "@/lib/i18n";
 import type { SessionInfo } from "@/types/session";
 
 const PasskeyStep = ({ session }: { session: SessionInfo }) => {
+  const { t } = useLanguage();
   const publicKey = useSessions((s) => s.passkeys[session.id]);
   const [hasExt, setHasExt] = useState<boolean | null>(null);
   const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
@@ -57,47 +59,44 @@ const PasskeyStep = ({ session }: { session: SessionInfo }) => {
         <KeyRound className="h-7 w-7" />
       </div>
       <div>
-        <p className="font-semibold">This account uses a passkey</p>
+        <p className="font-semibold">{t("This account uses a passkey")}</p>
         <p className="text-sm text-muted-foreground">
-          WhatsApp requires the account owner to approve this linked device.
+          {t("WhatsApp requires the account owner to approve this linked device.")}
         </p>
       </div>
 
       {hasExt === false ? (
         <div className="space-y-3">
-          <Badge variant="destructive">WA SIP Relay passkey extension not found</Badge>
+          <Badge variant="destructive">{t("WA SIP Relay passkey extension not found")}</Badge>
           <p className="text-sm text-muted-foreground">
-            Install the extension in the account owner's browser to approve the connection:
+            {t("Install the extension in the account owner's browser to approve the connection:")}
           </p>
           <ol className="mx-auto max-w-xs space-y-1 text-left text-sm text-muted-foreground">
-            <li>1. Download and extract the file below.</li>
-            <li>
-              2. Open <code className="rounded bg-muted px-1">chrome://extensions</code> and enable
-              <b> Developer mode</b>.
-            </li>
-            <li>3. Select <b>Load unpacked</b> and choose the extracted folder.</li>
-            <li>4. Return here and restart pairing.</li>
+            <li>{t("1. Download and extract the file below.")}</li>
+            <li>{t("2. Open chrome://extensions and enable Developer mode.")}</li>
+            <li>{t("3. Select Load unpacked and choose the extracted folder.")}</li>
+            <li>{t("4. Return here and restart pairing.")}</li>
           </ol>
           <Button asChild>
             <a href={EXTENSION_DOWNLOAD_URL} download>
-              Download extension (.zip)
+              {t("Download extension (.zip)")}
             </a>
           </Button>
         </div>
       ) : status === "running" ? (
         <Badge variant="muted" className="gap-1.5">
-          <Loader2 className="h-3 w-3 animate-spin" /> Waiting for approval in the WhatsApp tab…
+          <Loader2 className="h-3 w-3 animate-spin" /> {t("Waiting for approval in the WhatsApp tab…")}
         </Badge>
       ) : status === "error" ? (
         <div className="space-y-3">
-          <Badge variant="destructive">Failed: {error}</Badge>
+          <Badge variant="destructive">{t("Failed: {{error}}", { error })}</Badge>
           <Button onClick={() => void authorize()} className="gap-1.5">
-            <ShieldCheck className="h-4 w-4" /> Try again
+            <ShieldCheck className="h-4 w-4" /> {t("Try again")}
           </Button>
         </div>
       ) : (
         <Button onClick={() => void authorize()} className="gap-1.5">
-          <ShieldCheck className="h-4 w-4" /> Approve with passkey
+          <ShieldCheck className="h-4 w-4" /> {t("Approve with passkey")}
         </Button>
       )}
     </div>
@@ -105,6 +104,7 @@ const PasskeyStep = ({ session }: { session: SessionInfo }) => {
 };
 
 const CodeStep = ({ session }: { session: SessionInfo }) => {
+  const { t } = useLanguage();
   const code = useSessions((s) => s.codes[session.id]);
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -134,24 +134,22 @@ const CodeStep = ({ session }: { session: SessionInfo }) => {
       {code ? (
         <>
           <p className="text-sm text-muted-foreground">
-            On the phone, open <b>WhatsApp → Linked devices → Link a device →
-            Link with phone number instead</b>, then enter:
+            {t("On the phone, open WhatsApp → Linked devices → Link a device → Link with phone number instead, then enter:")}
           </p>
           <div className="rounded-xl border bg-muted/50 px-6 py-4">
             <span className="font-mono text-3xl font-bold tracking-[0.25em]">{pretty}</span>
           </div>
           <Badge variant="muted" className="gap-1.5">
-            <Loader2 className="h-3 w-3 animate-spin" /> Waiting for confirmation on the phone…
+            <Loader2 className="h-3 w-3 animate-spin" /> {t("Waiting for confirmation on the phone…")}
           </Badge>
           <Button variant="ghost" size="sm" onClick={() => void generate()} disabled={status === "loading"}>
-            Generate a new code
+            {t("Generate a new code")}
           </Button>
         </>
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            Enter the number with country code, for example <code className="rounded bg-muted px-1">15551234567</code>,
-            to generate a linking code.
+            {t("Enter the number with country code, for example 15551234567, to generate a linking code.")}
           </p>
           <Input
             type="tel"
@@ -164,15 +162,15 @@ const CodeStep = ({ session }: { session: SessionInfo }) => {
             }}
             className="text-center"
           />
-          {status === "error" && <Badge variant="destructive">Failed: {error}</Badge>}
+          {status === "error" && <Badge variant="destructive">{t("Failed: {{error}}", { error })}</Badge>}
           <Button onClick={() => void generate()} disabled={!canSubmit} className="w-full gap-1.5">
             {status === "loading" ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Generating…
+                <Loader2 className="h-4 w-4 animate-spin" /> {t("Generating…")}
               </>
             ) : (
               <>
-                <Smartphone className="h-4 w-4" /> Generate code
+                <Smartphone className="h-4 w-4" /> {t("Generate code")}
               </>
             )}
           </Button>
@@ -183,6 +181,7 @@ const CodeStep = ({ session }: { session: SessionInfo }) => {
 };
 
 export const SessionPairing = ({ session }: { session: SessionInfo }) => {
+  const { t } = useLanguage();
   const qr = useSessions((s) => s.qrs[session.id]);
   const hasCode = useSessions((s) => !!s.codes[session.id]);
   const isPasskey = session.state === "passkey_request";
@@ -194,10 +193,10 @@ export const SessionPairing = ({ session }: { session: SessionInfo }) => {
     <div className="flex min-h-[55vh] items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <CardTitle>Connect {session.name}</CardTitle>
+          <CardTitle>{t("Connect {{name}}", { name: session.name })}</CardTitle>
           {!isPasskey && mode === "qr" && (
             <CardDescription>
-              Open WhatsApp → Linked devices → Link a device, then scan this code.
+              {t("Open WhatsApp → Linked devices → Link a device, then scan this code.")}
             </CardDescription>
           )}
         </CardHeader>
@@ -215,7 +214,7 @@ export const SessionPairing = ({ session }: { session: SessionInfo }) => {
                     mode === "qr" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <QrCode className="h-4 w-4" /> QR Code
+                  <QrCode className="h-4 w-4" /> {t("QR Code")}
                 </button>
                 <button
                   type="button"
@@ -224,7 +223,7 @@ export const SessionPairing = ({ session }: { session: SessionInfo }) => {
                     mode === "code" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  <Smartphone className="h-4 w-4" /> Phone code
+                  <Smartphone className="h-4 w-4" /> {t("Phone code")}
                 </button>
               </div>
 
@@ -235,12 +234,12 @@ export const SessionPairing = ({ session }: { session: SessionInfo }) => {
                   <QRCodeSVG value={qr} size={232} marginSize={1} />
                 </div>
               ) : session.state === "logged_out" ? (
-                <Badge variant="destructive">Disconnected — select Pair above to generate a new QR code</Badge>
+                <Badge variant="destructive">{t("Disconnected — select Pair above to generate a new QR code")}</Badge>
               ) : (
                 <>
                   <Skeleton className="h-[258px] w-[258px] rounded-lg" />
                   <Badge variant="muted" className="gap-1.5">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Waiting for a QR code…
+                    <Loader2 className="h-3 w-3 animate-spin" /> {t("Waiting for a QR code…")}
                   </Badge>
                 </>
               )}

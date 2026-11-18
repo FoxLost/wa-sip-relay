@@ -16,20 +16,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { listMcpKeys, createMcpKey, deleteMcpKey, type McpKey, type McpKeyCreated } from "@/services/mcp";
+import { copyText } from "@/lib/clipboard";
 
 const fmtDate = (iso?: string) =>
-  iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "nunca";
+  iso ? new Date(iso).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" }) : "never";
 
-// Campo somente leitura com botão de copiar.
+// Read-only field with a copy button.
 const CopyField = ({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) => {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
-      await navigator.clipboard?.writeText(value);
+      await copyText(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Não foi possível copiar");
+      toast.error("Could not copy");
     }
   };
   return (
@@ -41,7 +42,7 @@ const CopyField = ({ label, value, multiline }: { label: string; value: string; 
         ) : (
           <Input readOnly value={value} className="min-w-0 flex-1 font-mono text-xs" onFocus={(e) => e.target.select()} />
         )}
-        <Button type="button" size="icon" variant="outline" className="shrink-0" title="Copiar" onClick={copy}>
+        <Button type="button" size="icon" variant="outline" className="shrink-0" title="Copy" onClick={() => void copy()}>
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         </Button>
       </div>
@@ -104,11 +105,11 @@ export const McpDialog = ({ sid }: { sid: string }) => {
   };
 
   const remove = async (k: McpKey) => {
-    if (!window.confirm(`Revogar a chave ${k.name || k.prefix}? Quem estiver usando perde o acesso na hora.`)) return;
+    if (!window.confirm(`Revoke ${k.name || k.prefix}? Anyone using this key will immediately lose access.`)) return;
     setBusy(true);
     try {
       await deleteMcpKey(sid, k.id);
-      toast.success("Chave revogada");
+      toast.success("Key revoked");
       await load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -121,22 +122,22 @@ export const McpDialog = ({ sid }: { sid: string }) => {
     <div className="space-y-3">
       {keys.length === 0 && (
         <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-          Nenhuma chave MCP nesta sessão. Crie uma para conectar um agente de IA a este número.
+          No MCP keys for this session. Create one to connect an AI agent to this number.
         </p>
       )}
       {keys.map((k) => (
         <div key={k.id} className="flex items-start justify-between gap-2 rounded-lg border p-3">
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">{k.name || "Chave MCP"}</span>
-              <Badge variant={k.readOnly ? "muted" : "secondary"}>{k.readOnly ? "Somente leitura" : "Acesso completo"}</Badge>
+              <span className="text-sm font-medium">{k.name || "MCP key"}</span>
+              <Badge variant={k.readOnly ? "muted" : "secondary"}>{k.readOnly ? "Read only" : "Full access"}</Badge>
             </div>
             <p className="font-mono text-xs text-muted-foreground">{k.prefix}…</p>
             <p className="text-xs text-muted-foreground">
-              Criada {fmtDate(k.createdAt)} · último uso {fmtDate(k.lastUsedAt)}
+              Created {fmtDate(k.createdAt)} · last used {fmtDate(k.lastUsedAt)}
             </p>
           </div>
-          <Button size="icon" variant="ghost" disabled={busy} title="Revogar" onClick={() => remove(k)}>
+          <Button size="icon" variant="ghost" disabled={busy} title="Revoke" onClick={() => remove(k)}>
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -147,20 +148,20 @@ export const McpDialog = ({ sid }: { sid: string }) => {
   const form = (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label>Nome</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: Claude do comercial, n8n" />
+        <Label>Name</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="For example Sales Claude or n8n" />
       </div>
       <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border p-3">
         <span className="space-y-0.5">
-          <span className="block text-sm font-medium">Somente leitura</span>
+          <span className="block text-sm font-medium">Read only</span>
           <span className="block text-xs text-muted-foreground">
-            O agente pode ler conversas, buscar mensagens e consultar contatos e grupos, mas não envia nem altera nada.
+            The agent can read conversations, search messages, and inspect contacts and groups, but cannot send or change anything.
           </span>
         </span>
-        <Switch checked={readOnly} onCheckedChange={setReadOnly} aria-label="Somente leitura" />
+        <Switch checked={readOnly} onCheckedChange={setReadOnly} aria-label="Read only" />
       </label>
       <p className="text-xs text-muted-foreground">
-        A chave só dá acesso a este número. Não permite parear, desconectar nem mexer em webhooks, Chatwoot ou SIP.
+        This key grants access only to this number. It cannot pair or disconnect accounts or change webhooks, Chatwoot, or SIP.
       </p>
     </div>
   );
@@ -169,15 +170,15 @@ export const McpDialog = ({ sid }: { sid: string }) => {
     <div className="min-w-0 space-y-4">
       <p className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
         <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
-        Copie agora: a chave não será mostrada de novo. Se perder, revogue e crie outra.
+        Copy this key now. It will not be shown again. Revoke it and create another if it is lost.
       </p>
-      <CopyField label="URL completa (claude.ai, ChatGPT e clientes que só pedem a URL)" value={created.url} />
-      <CopyField label="Endereço MCP" value={created.endpoint} />
-      <CopyField label="Chave (Authorization: Bearer)" value={created.secret} />
+      <CopyField label="Complete URL (for clients that only request a URL)" value={created.url} />
+      <CopyField label="MCP endpoint" value={created.endpoint} />
+      <CopyField label="Key (Authorization: Bearer)" value={created.secret} />
       <CopyField
         label="Claude Code"
         multiline
-        value={`claude mcp add --transport http astracalls ${created.endpoint} \\\n  --header "Authorization: Bearer ${created.secret}"`}
+        value={`claude mcp add --transport http wa-sip-relay ${created.endpoint} --header "Authorization: Bearer ${created.secret}"`}
       />
       <CopyField
         label="Claude Desktop, Cursor, VS Code (mcpServers)"
@@ -185,7 +186,7 @@ export const McpDialog = ({ sid }: { sid: string }) => {
         value={JSON.stringify(
           {
             mcpServers: {
-              astracalls: {
+              waSipRelay: {
                 type: "http",
                 url: created.endpoint,
                 headers: { Authorization: `Bearer ${created.secret}` },
@@ -197,17 +198,17 @@ export const McpDialog = ({ sid }: { sid: string }) => {
         )}
       />
       <p className="text-xs text-muted-foreground">
-        No n8n: ferramenta <strong>MCP Client</strong> do agente de IA, com o endereço acima e autenticação Bearer.
+        In n8n, use the AI agent's <strong>MCP Client</strong> tool with the endpoint above and Bearer authentication.
       </p>
     </div>
   );
 
-  const title = view === "list" ? "MCP — agentes de IA" : view === "new" ? "Nova chave MCP" : "Chave criada";
+  const title = view === "list" ? "MCP — AI agents" : view === "new" ? "New MCP key" : "Key created";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant={keys.length ? "default" : "outline"} size="sm" title="MCP (agentes de IA)">
+        <Button variant={keys.length ? "default" : "outline"} size="sm" title="MCP (AI agents)">
           <Bot className="h-4 w-4" />
           <span className="hidden sm:inline">MCP{keys.length > 1 ? ` (${keys.length})` : ""}</span>
         </Button>
@@ -216,8 +217,8 @@ export const McpDialog = ({ sid }: { sid: string }) => {
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Conecte Claude, ChatGPT, Cursor, n8n e outros agentes de IA a este número pelo MCP: eles enviam mensagens,
-            leem conversas, fazem ligações e gerenciam grupos.
+            Connect Claude, ChatGPT, Cursor, n8n, and other AI agents to this number through MCP. They can send messages,
+            read conversations, make calls, and manage groups.
           </DialogDescription>
         </DialogHeader>
 
@@ -231,23 +232,23 @@ export const McpDialog = ({ sid }: { sid: string }) => {
               </span>
               <Button disabled={busy || keys.length >= max} onClick={startNew}>
                 <Plus className="h-4 w-4" />
-                Nova chave
+                New key
               </Button>
             </>
           ) : view === "new" ? (
             <>
               <Button variant="outline" disabled={busy} onClick={() => setView("list")}>
                 <ArrowLeft className="h-4 w-4" />
-                Voltar
+                Back
               </Button>
               <Button disabled={busy} onClick={create}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Criar chave
+                Create key
               </Button>
             </>
           ) : (
             <Button className="sm:ml-auto" onClick={() => setView("list")}>
-              Concluir
+              Done
             </Button>
           )}
         </DialogFooter>

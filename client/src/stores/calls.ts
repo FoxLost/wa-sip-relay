@@ -5,15 +5,14 @@ import { queryClient, queryKeys } from "@/lib/query";
 import type { OpenCall } from "@/lib/webrtc";
 import type { CallSummary, IncomingPayload, TransferOfferPayload } from "@/types/call";
 
-// Estado de negociação de vídeo por chamada. peerVideo e os flags de upgrade vêm
-// do backend (SSE video-state); localVideo é dirigido pela câmera do próprio
-// navegador (o backend não sabe se a câmera do operador está ligada de fato).
+// Per-call video negotiation state. Peer state comes from backend SSE events while localVideo
+// reflects the browser camera, which the backend cannot observe directly.
 export type CallVideoState = {
   peerVideo: boolean;
   localVideo: boolean;
   upgradeIncoming: boolean;
   upgradeOutgoing: boolean;
-  /** Rotação da câmera do peer em quartos de volta horários (0..3), lida do RTP. */
+  /** Peer camera orientation from RTP in clockwise quarter turns. */
   peerOrientation: number;
 };
 
@@ -86,7 +85,7 @@ export const ensureCallsWired = (): void => {
     } else if (ev.type === "incoming-claimed") {
       useCalls.setState((s) => (s.incoming?.callId === ev.id ? { incoming: null } : s));
     } else if (ev.type === "call-transfer-offer") {
-      // Não mostra a oferta para quem iniciou a transferência.
+      // Do not show a transfer offer to the operator who initiated it.
       if (ev.from !== getClientId()) {
         useCalls.setState({
           transferOffer: { sessionId: ev.sessionId, callId: ev.id, peer: ev.peer, from: ev.from, offeredAt: ev.offeredAt },
@@ -95,7 +94,7 @@ export const ensureCallsWired = (): void => {
     } else if (ev.type === "call-transfer-claimed") {
       useCalls.setState((s) => (s.transferOffer?.callId === ev.id ? { transferOffer: null } : s));
     } else if (ev.type === "video-state") {
-      // localVideo é do cliente: não sobrescreve com o valor do backend.
+      // localVideo is client-owned and must not be overwritten with backend state.
       patchVideo(ev.id, {
         peerVideo: ev.peerVideo,
         upgradeIncoming: ev.upgradeIncoming,
@@ -117,7 +116,7 @@ export const registerOwnConnection = (id: string, conn: OpenCall, initialVideo =
   if (initialVideo) patchVideo(id, { localVideo: true });
 };
 
-// setLocalVideoState reflete na UI se a câmera do operador está ligada.
+// Reflect whether the operator camera is active.
 export const setLocalVideoState = (id: string, on: boolean): void => patchVideo(id, { localVideo: on });
 
 export const clearIncoming = (): void => useCalls.setState({ incoming: null });

@@ -12,8 +12,8 @@ import (
 	"github.com/emiago/sipgo/sip"
 )
 
-// O 200 do REGISTER precisa listar o binding no Contact (RFC 3261 §10.3): o
-// 3CX confere e, sem ele, deixa o tronco "Não registrado" (sem rota de saída).
+// REGISTER's 200 response must list the Contact binding (RFC 3261 §10.3).
+// 3CX checks it and otherwise leaves the trunk unregistered with no outbound route.
 func TestSIPRegisterOKHasContact(t *testing.T) {
 	log := slog.Default()
 	mgr := &SessionManager{broker: NewBroker(), log: log, maxCalls: 8, sessions: map[string]*Session{}}
@@ -42,6 +42,7 @@ func TestSIPRegisterOKHasContact(t *testing.T) {
 	req.AppendHeader(&sip.ToHeader{Address: aor, Params: sip.NewParams()})
 	req.AppendHeader(&sip.ContactHeader{Address: sip.Uri{Scheme: "sip", User: "wa_test1234", Host: "127.0.0.1", Port: 15094}})
 	req.AppendHeader(sip.NewHeader("Expires", "120"))
+	req.AppendHeader(sip.NewHeader("User-Agent", "Grandstream GRP2601P"))
 	req.AppendHeader(sip.NewHeader("Authorization",
 		buildAuth("wa_test1234", "astracalls", "segredo", "REGISTER", "sip:127.0.0.1:15093", "n1")))
 
@@ -52,14 +53,23 @@ func TestSIPRegisterOKHasContact(t *testing.T) {
 		t.Fatal(err)
 	}
 	if res.StatusCode != 200 {
-		t.Fatalf("esperava 200, got %d", res.StatusCode)
+		t.Fatalf("expected 200, got %d", res.StatusCode)
+	}
+	gw.mu.RLock()
+	registration := gw.registrations["wa_test1234"]
+	gw.mu.RUnlock()
+	if registration == nil {
+		t.Fatal("registration was not stored")
+	}
+	if registration.clientName != "Grandstream GRP2601P" {
+		t.Fatalf("registered client name = %q, want Grandstream GRP2601P", registration.clientName)
 	}
 	ct := res.Contact()
 	if ct == nil || ct.Address.Port != 15094 || ct.Address.User != "wa_test1234" {
-		t.Fatalf("200 sem o Contact registrado: %v", res)
+		t.Fatalf("200 response missing the registered Contact: %v", res)
 	}
 	if !strings.Contains(ct.String(), "expires=120") {
-		t.Fatalf("Contact sem expires: %s", ct)
+		t.Fatalf("Contact missing expires: %s", ct)
 	}
 }
 

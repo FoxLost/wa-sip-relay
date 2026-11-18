@@ -22,6 +22,8 @@ flowchart LR
 - PCMU and PCMA audio with RFC 4733 telephone events.
 - Persistent call history for calls handled by the relay.
 - Grandstream XML, vCard, and JSON phonebook feeds.
+- Registered SIP endpoint inventory with client name and source IP.
+- English and Indonesian administration UI.
 - Linux amd64 and arm64 Docker images.
 
 ## Storage

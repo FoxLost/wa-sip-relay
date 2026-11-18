@@ -21,7 +21,7 @@ export const Dialer = ({ sid }: { sid: string }) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Discador</CardTitle>
+        <CardTitle>Dialer</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <DeviceSelector />
@@ -44,15 +44,15 @@ export const Dialer = ({ sid }: { sid: string }) => {
             aria-pressed={video}
           >
             <Video className="h-4 w-4" />
-            Vídeo
+            Video
           </Button>
           <Button onClick={submit} disabled={startCall.isPending || !phone.trim()}>
             <Phone className="h-4 w-4" />
-            {startCall.isPending ? "Ligando…" : "Ligar"}
+            {startCall.isPending ? "Calling…" : "Call"}
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Você pode fazer várias ligações ao mesmo tempo — disque outro número e uma nova chamada aparece abaixo.
+          You can make multiple calls at once. Dial another number and a new call will appear below.
         </p>
       </CardContent>
     </Card>

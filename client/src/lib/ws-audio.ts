@@ -1,28 +1,20 @@
 /**
- * ws-audio.ts — Transporte de mídia via WebSocket.
+ * Audio media transport over WebSocket.
  *
- * Substitui o RTCPeerConnection quando o ambiente usa proxy reverso que bloqueia
- * UDP (ex.: Cloudflare orange cloud). Funciona em WSS/443 que passa por qualquer
- * proxy HTTP. Seleção via transport.ts (opt-in explícito).
+ * Replaces RTCPeerConnection behind reverse proxies that block UDP. WSS traffic passes through
+ * ordinary HTTP proxies.
  *
- * Protocolo:
- *   - Uplink   (mic → servidor): frames binários PCM Int16 LE, 16 kHz, mono
- *   - Downlink (servidor → speaker): mesma codificação
- *
- * Uso:
- *   const bridge = new WSAudioBridge(sid, callId);
- *   await bridge.connect();
- *   bridge.disconnect(); // ao encerrar chamada
+ * Protocol:
+ *   - Uplink: binary PCM Int16 LE frames, 16 kHz mono
+ *   - Downlink: the same encoding
  */
 
 import { getApiBase, getApiKey } from "./auth";
 
-const SAMPLE_RATE = 16_000; // Hz — deve bater com o servidor Go
-// bufferSize do ScriptProcessorNode: DEVE ser potência de 2 (256/512/1024…).
-// 512 amostras a 16 kHz ≈ 32 ms por frame — bom equilíbrio latência × overhead.
+const SAMPLE_RATE = 16_000; // Must match the Go server.
+// ScriptProcessorNode buffer size must be a power of two. At 16 kHz, 512 samples is about 32 ms.
 const FRAME_SAMPLES = 512;
-// Cushion inicial do jitter buffer de playback (segundos). Segura contra rede
-// irregular sem adicionar latência perceptível.
+// Initial playback jitter cushion in seconds.
 const JITTER_CUSHION = 0.06; // 60 ms
 
 export type WSAudioEvents = {
@@ -31,10 +23,10 @@ export type WSAudioEvents = {
 };
 
 export class WSAudioBridge {
-  /** Stream de microfone — disponível após connect() para o VU meter */
+  /** Microphone stream available after connect(), including for the VU meter. */
   micStream: MediaStream | null = null;
 
-  /** Stream de áudio remoto — disponível após connect() para o VU meter */
+  /** Remote audio stream available after connect(), including for the VU meter. */
   remoteStream: MediaStream | null = null;
 
   private ws: WebSocket | null = null;
@@ -43,11 +35,10 @@ export class WSAudioBridge {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private playbackCtx: AudioContext | null = null;
 
-  // Cursor de agendamento do playback (jitter buffer): próximo instante livre
-  // na timeline do AudioContext de reprodução.
+  // Next free playback time in the AudioContext timeline.
   private playCursor = 0;
 
-  // Para o VU meter do peer (criamos uma MediaStream sintética)
+  // Synthetic MediaStream used by the peer VU meter.
   private remoteDestination: MediaStreamAudioDestinationNode | null = null;
 
   private events: WSAudioEvents;
@@ -66,7 +57,7 @@ export class WSAudioBridge {
   async connect(): Promise<void> {
     this.events.onState?.("connecting");
 
-    // Solicita microfone
+    // Request microphone access.
     this.micStream = await navigator.mediaDevices.getUserMedia({
       audio: this.micDeviceId
         ? { deviceId: { exact: this.micDeviceId }, sampleRate: SAMPLE_RATE, channelCount: 1,
@@ -75,7 +66,7 @@ export class WSAudioBridge {
             echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
 
-    // Monta a URL WebSocket a partir da URL da API (http→ws, https→wss)
+    // Convert the API URL to a WebSocket URL.
     const base = getApiBase();
     const wsBase = base
       .replace(/^https:\/\//, "wss://")
@@ -106,7 +97,7 @@ export class WSAudioBridge {
         if (ev.data instanceof ArrayBuffer) {
           this.playPCM(ev.data);
         }
-        // mensagens texto (controle) são ignoradas aqui
+        // Text control messages are ignored by the audio bridge.
       };
     });
 
@@ -116,13 +107,11 @@ export class WSAudioBridge {
   private startCapture(): void {
     if (!this.micStream || !this.ws) return;
 
-    // AudioContext a 16 kHz — reduz o trabalho de resampling no servidor
+    // A 16 kHz AudioContext reduces server-side resampling.
     this.audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
     this.sourceNode = this.audioCtx.createMediaStreamSource(this.micStream);
 
-    // ScriptProcessorNode — coleta FRAME_SAMPLES por callback.
-    // Nota: a API é deprecated mas funciona em todos os browsers atuais.
-    // AudioWorklet é o sucessor correto, mas exige Worker e ficheiro separado.
+    // ScriptProcessorNode is deprecated but broadly supported. AudioWorklet requires a separate worker.
     this.processorNode = this.audioCtx.createScriptProcessor(FRAME_SAMPLES, 1, 1);
     this.processorNode.onaudioprocess = (ev) => {
       if (this.ws?.readyState !== WebSocket.OPEN) return;
@@ -131,7 +120,7 @@ export class WSAudioBridge {
     };
 
     this.sourceNode.connect(this.processorNode);
-    // Necessário conectar ao destination para o ScriptProcessor funcionar
+    // ScriptProcessorNode must connect to a destination to receive callbacks.
     this.processorNode.connect(this.audioCtx.destination);
   }
 
@@ -147,16 +136,15 @@ export class WSAudioBridge {
   }
 
   private playPCM(buffer: ArrayBuffer): void {
-    // Lazy-init do AudioContext de reprodução
+    // Create the playback AudioContext and a destination stream for the remote VU meter.
     if (!this.playbackCtx) {
       this.playbackCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      // Cria um destino MediaStream para o VU meter do peer
       this.remoteDestination = this.playbackCtx.createMediaStreamDestination();
       this.remoteStream = this.remoteDestination.stream;
     }
     const ctx = this.playbackCtx;
 
-    // PCM Int16 LE → Float32
+    // Convert PCM Int16 LE to Float32.
     const int16 = new Int16Array(buffer);
     if (int16.length === 0) return;
     const float32 = new Float32Array(int16.length);
@@ -174,9 +162,8 @@ export class WSAudioBridge {
       src.connect(this.remoteDestination);
     }
 
-    // Jitter buffer: agenda cada chunk sequencialmente numa timeline contínua em
-    // vez de tocar imediatamente. Se o cursor atrasou (rede engasgou), reancora
-    // com uma pequena folga; senão, encadeia sem gaps nem sobreposição.
+    // Schedule chunks on a continuous jitter-buffer timeline. Re-anchor with a small cushion
+    // after network stalls; otherwise append without gaps or overlap.
     const now = ctx.currentTime;
     if (this.playCursor < now + 0.005) {
       this.playCursor = now + JITTER_CUSHION;
@@ -185,7 +172,7 @@ export class WSAudioBridge {
     this.playCursor += audioBuffer.duration;
   }
 
-  /** Silencia/retoma o microfone (hold). */
+  /** Mute or resume the microphone while held. */
   setMicEnabled(enabled: boolean): void {
     this.micStream?.getAudioTracks().forEach((t) => {
       t.enabled = enabled;
@@ -204,7 +191,7 @@ export class WSAudioBridge {
   }
 }
 
-/** Converte Float32 [-1, 1] → Int16 LE [-32768, 32767] */
+/** Convert Float32 [-1, 1] to Int16 LE [-32768, 32767]. */
 function float32ToInt16LE(input: Float32Array): Int16Array {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
@@ -215,8 +202,7 @@ function float32ToInt16LE(input: Float32Array): Int16Array {
 }
 
 /**
- * openWSCall — interface equivalente a openCall() de webrtc.ts.
- * Retorna um objeto compatível (campos de vídeo nulos — WS é áudio-only).
+ * Open a WebSocket call using the same shape as openCall(), with null video fields.
  */
 export type OpenWSCall = {
   micStream: MediaStream;

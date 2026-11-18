@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
+import { useLanguage } from "@/lib/i18n";
 import { getSIP, getSIPExt, setSIPExt, type SIPConfig, type SIPExtConfig } from "@/services/sessions";
 import type { SessionInfo } from "@/types/session";
 
@@ -39,11 +41,12 @@ const emptyExt: SIPExtConfig = {
 
 
 const StatusBadge = ({ status, error }: { status?: string; error?: string }) => {
+  const { t } = useLanguage();
   if (!status) return null;
   const map: Record<string, { label: string; cls: string }> = {
-    registered: { label: "Registered", cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
-    registering: { label: "Registering…", cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
-    failed: { label: "Failed", cls: "bg-red-500/15 text-red-600 border-red-500/30" },
+    registered: { label: t("Registered"), cls: "bg-emerald-500/15 text-emerald-600 border-emerald-500/30" },
+    registering: { label: t("Registering…"), cls: "bg-amber-500/15 text-amber-600 border-amber-500/30" },
+    failed: { label: t("Failed"), cls: "bg-red-500/15 text-red-600 border-red-500/30" },
   };
   const s = map[status] ?? { label: status, cls: "" };
   return (
@@ -54,6 +57,7 @@ const StatusBadge = ({ status, error }: { status?: string; error?: string }) => 
 };
 
 export const SIPDialog = ({ session }: { session: SessionInfo }) => {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("server");
   const [showPass, setShowPass] = useState(false);
@@ -85,10 +89,15 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       .catch(() => {});
   }, [open, session.id]);
 
-  const copy = (field: Field, value: string) => {
-    navigator.clipboard?.writeText(value);
-    setCopied(field);
-    setTimeout(() => setCopied(null), 1500);
+  const copy = async (field: Field, value: string) => {
+    try {
+      await copyText(value);
+      setCopied(field);
+      window.setTimeout(() => setCopied(null), 1500);
+      toast.success(t("Copied"));
+    } catch {
+      toast.error(t("Could not copy"));
+    }
   };
 
   const setE = <K extends keyof SIPExtConfig>(k: K, v: SIPExtConfig[K]) =>
@@ -96,7 +105,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
 
   const saveExt = async () => {
     if (ext.enabled && (!ext.host.trim() || !ext.user.trim())) {
-      toast.error("Enter the PBX host and username");
+      toast.error(t("Enter the PBX host and username"));
       return;
     }
     setBusy(true);
@@ -114,7 +123,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
         agentAutoAnswer: !!ext.agentAutoAnswer,
         agentRingTimeoutSeconds: ext.agentRingTimeoutSeconds,
       });
-      toast.success(ext.enabled ? "PBX registration saved — connecting…" : "PBX registration disabled");
+      toast.success(ext.enabled ? t("PBX registration saved — connecting…") : t("PBX registration disabled"));
       setOpen(false);
     } catch (e) {
       toast.error((e as Error).message);
@@ -128,7 +137,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       <Label>{label}</Label>
       <div className="flex gap-2">
         <Input readOnly value={value} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
-        <Button type="button" variant="outline" size="icon" onClick={() => copy(field, value)} aria-label={`Copy ${label}`}>
+        <Button type="button" variant="outline" size="icon" onClick={() => void copy(field, value)} aria-label={t("Copy {{label}}", { label })}>
           {copied === field ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         </Button>
       </div>
@@ -159,33 +168,32 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>SIP / PBX integration</DialogTitle>
+          <DialogTitle>{t("SIP / PBX integration")}</DialogTitle>
           <DialogDescription>
-            Choose whether phones register with this relay or the relay registers with an external PBX.
+            {t("Choose whether phones register with this relay or the relay registers with an external PBX.")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex gap-1 rounded-full bg-muted p-1">
           <TabButton id="server" icon={<Server className="h-3.5 w-3.5" />}>
-            PBX registers here
+            {t("PBX registers here")}
           </TabButton>
           <TabButton id="external" icon={<ArrowUpRight className="h-3.5 w-3.5" />}>
-            Register with PBX
+            {t("Register with PBX")}
           </TabButton>
         </div>
 
         {tab === "server" ? (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              The phone, softphone, or PBX <b>registers with this relay</b> using the credentials below.
-              Numbers dialed through this account are sent to WhatsApp.
+              {t("The phone, softphone, or PBX registers with this relay using the credentials below. Numbers dialed through this account are sent to WhatsApp.")}
             </p>
-            <Row label="SIP server (host:port)" field="server" value={server} />
-            <Row label="Domain / realm" field="domain" value={domain} />
-            <Row label="SIP username" field="user" value={sipUser} />
+            <Row label={t("SIP server (host:port)")} field="server" value={server} />
+            <Row label={t("Domain / realm")} field="domain" value={domain} />
+            <Row label={t("SIP username")} field="user" value={sipUser} />
 
             <div className="space-y-1">
-              <Label>SIP password</Label>
+              <Label>{t("SIP password")}</Label>
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -199,7 +207,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                   variant="outline"
                   size="icon"
                   onClick={() => setShowPass((v) => !v)}
-                  aria-label={showPass ? "Hide password" : "Show password"}
+                  aria-label={showPass ? t("Hide password") : t("Show password")}
                 >
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
@@ -207,8 +215,8 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => copy("pass", sipPass)}
-                  aria-label="Copy password"
+                  onClick={() => void copy("pass", sipPass)}
+                  aria-label={t("Copy password")}
                 >
                   {copied === "pass" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
@@ -216,12 +224,12 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Phone or PBX setup</p>
+              <p className="font-medium text-foreground">{t("Phone or PBX setup")}</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                <li>Transport: <b>UDP</b> on port {SIP_PORT}; codec: <b>G.711 PCMU or PCMA</b>.</li>
-                <li>On FreePBX, create a <b>PJSIP trunk</b> with the SIP username and server shown above.</li>
-                <li>Dial international numbers without a plus sign, for example 15551234567.</li>
-                <li>Keep these credentials private; they authorize calls through this WhatsApp account.</li>
+                <li>{t("Transport: UDP on port {{port}}; codec: G.711 PCMU or PCMA.", { port: SIP_PORT })}</li>
+                <li>{t("On FreePBX, create a PJSIP trunk with the SIP username and server shown above.")}</li>
+                <li>{t("Dial international numbers without a plus sign, for example 15551234567.")}</li>
+                <li>{t("Keep these credentials private; they authorize calls through this WhatsApp account.")}</li>
               </ul>
             </div>
           </div>
@@ -229,9 +237,9 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-md border border-border p-3">
               <div>
-                <p className="text-sm font-medium">Register with an external PBX</p>
+                <p className="text-sm font-medium">{t("Register with an external PBX")}</p>
                 <p className="text-xs text-muted-foreground">
-                  WA SIP Relay becomes a <b>registered extension</b> on Asterisk, FreePBX, 3CX, or another SIP PBX.
+                  {t("WA SIP Relay becomes a registered extension on Asterisk, FreePBX, 3CX, or another SIP PBX.")}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -246,7 +254,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
 
             <div className="grid grid-cols-[1fr_6rem] gap-2">
               <div className="space-y-1">
-                <Label>PBX host</Label>
+                <Label>{t("PBX host")}</Label>
                 <Input
                   value={ext.host}
                   onChange={(e) => setE("host", e.target.value)}
@@ -255,7 +263,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Port</Label>
+                <Label>{t("Port")}</Label>
                 <Input
                   value={String(ext.port)}
                   onChange={(e) => setE("port", Number(e.target.value.replace(/\D/g, "")) || 0)}
@@ -267,22 +275,21 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="space-y-1">
-              <Label>Outbound proxy — optional</Label>
+              <Label>{t("Outbound proxy — optional")}</Label>
               <Input
                 value={ext.proxy ?? ""}
                 onChange={(e) => setE("proxy", e.target.value)}
-                placeholder="For example sip.provider.com:5060; blank uses the PBX host"
+                placeholder={t("For example sip.provider.com:5060; blank uses the PBX host")}
                 disabled={!ext.enabled}
               />
               <p className="text-[0.7rem] text-muted-foreground">
-                Set this when SIP messages must be sent to a server other than the PBX domain. This is
-                common with hosted trunks and some FreePBX deployments.
+                {t("Set this when SIP messages must be sent to a server other than the PBX domain. This is common with hosted trunks and some FreePBX deployments.")}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Username / extension</Label>
+                <Label>{t("Username / extension")}</Label>
                 <Input
                   value={ext.user}
                   onChange={(e) => setE("user", e.target.value)}
@@ -292,14 +299,14 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Password</Label>
+                <Label>{t("Password")}</Label>
                 <div className="flex gap-2">
                   <Input
                     value={ext.pass}
                     onChange={(e) => setE("pass", e.target.value)}
                     type={showExtPass ? "text" : "password"}
                     autoComplete="new-password"
-                    placeholder="Extension password"
+                    placeholder={t("Extension password")}
                     disabled={!ext.enabled}
                   />
                   <Button
@@ -307,7 +314,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                     variant="outline"
                     size="icon"
                     onClick={() => setShowExtPass((v) => !v)}
-                    aria-label={showExtPass ? "Hide password" : "Show password"}
+                    aria-label={showExtPass ? t("Hide password") : t("Show password")}
                   >
                     {showExtPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
@@ -316,43 +323,37 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </div>
 
             <div className="space-y-1">
-              <Label>Authentication username (Auth ID) — optional</Label>
+              <Label>{t("Authentication username (Auth ID) — optional")}</Label>
               <Input
                 value={ext.authUser ?? ""}
                 onChange={(e) => setE("authUser", e.target.value)}
                 autoComplete="off"
-                placeholder="Leave blank to use the extension"
+                placeholder={t("Leave blank to use the extension")}
                 disabled={!ext.enabled}
               />
               <p className="text-[0.7rem] text-muted-foreground">
-                Use this when the PBX authenticates with an ID different from the extension. On <b>3CX</b>,
-                enter the extension's <b>Authentication ID</b> here.
+                {t("Use this when the PBX authenticates with an ID different from the extension. On 3CX, enter the extension's Authentication ID here.")}
               </p>
             </div>
 
             <div className="space-y-1">
-              <Label>Destination for incoming WhatsApp calls — optional</Label>
+              <Label>{t("Destination for incoming WhatsApp calls — optional")}</Label>
               <Input
                 value={ext.dest}
                 onChange={(e) => setE("dest", e.target.value)}
-                placeholder="For example 600 for a queue or extension"
+                placeholder={t("For example 600 for a queue or extension")}
                 disabled={!ext.enabled}
               />
             </div>
 
 
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">How it works</p>
+              <p className="font-medium text-foreground">{t("How it works")}</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                <li>Create an <b>extension</b> on the PBX and enter its credentials here.</li>
-                <li>
-                  <b>PBX → WhatsApp:</b> route the call to this extension with the destination in
-                  international format, for example 15551234567.
-                </li>
-                <li>
-                  <b>WhatsApp → PBX:</b> incoming calls ring the destination configured above.
-                </li>
-                <li>Codec: <b>G.711 PCMU or PCMA</b>; transport: UDP.</li>
+                <li>{t("Create an extension on the PBX and enter its credentials here.")}</li>
+                <li>{t("PBX → WhatsApp: route the call to this extension with the destination in international format, for example 15551234567.")}</li>
+                <li>{t("WhatsApp → PBX: incoming calls ring the destination configured above.")}</li>
+                <li>{t("Codec: G.711 PCMU or PCMA; transport: UDP.")}</li>
               </ul>
             </div>
           </div>
@@ -362,7 +363,7 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
           <DialogFooter>
             <Button disabled={busy} onClick={() => void saveExt()}>
               {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              Save
+              {t("Save")}
             </Button>
           </DialogFooter>
         ) : null}

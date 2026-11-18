@@ -7,12 +7,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { HistoryDrawer } from "@/components/domain/history/HistoryDrawer";
 import { SIPDialog } from "@/components/domain/session/SIPDialog";
 import { apiGet } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
+import { useLanguage } from "@/lib/i18n";
 import type { SessionInfo } from "@/types/session";
 
 type SIPRegistration = {
   sip_user: string;
   session_id: string;
   contact: string;
+  client_name?: string;
+  source_ip?: string;
 };
 
 type SIPActiveCall = {
@@ -31,12 +35,9 @@ type PhonebookFeeds = {
   jsonUrl: string;
 };
 
-const copy = async (value: string): Promise<void> => {
-  await navigator.clipboard.writeText(value);
-  toast.success("Copied");
-};
 
 export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<SIPStatus | null>(null);
   const [feeds, setFeeds] = useState<PhonebookFeeds | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
       setStatus(nextStatus);
       setFeeds(nextFeeds);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not load relay status");
+      toast.error(error instanceof Error ? error.message : t("Could not load relay status"));
     } finally {
       setLoading(false);
     }
@@ -75,11 +76,17 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <Network className="h-5 w-5" /> SIP relay
+                <Network className="h-5 w-5" /> {t("SIP relay")}
               </CardTitle>
-              <CardDescription>Direct registrar or external PBX registration.</CardDescription>
+              <CardDescription>{t("Direct registrar or external PBX registration.")}</CardDescription>
             </div>
-            <Button size="icon" variant="ghost" onClick={() => void refresh()} disabled={loading}>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => void refresh()}
+              disabled={loading}
+              aria-label={t("Refresh relay status")}
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
           </div>
@@ -87,17 +94,27 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Badge variant={status?.enabled ? "success" : "destructive"}>
-              {status?.enabled ? "SIP listener ready" : "SIP listener unavailable"}
+              {status?.enabled ? t("SIP listener ready") : t("SIP listener unavailable")}
             </Badge>
             <Badge variant={registrations.length ? "success" : "secondary"}>
-              {registrations.length ? `${registrations.length} registered endpoint` : "No registered endpoint"}
+              {registrations.length
+                ? t(registrations.length === 1 ? "{{count}} registered endpoint" : "{{count}} registered endpoints", {
+                    count: registrations.length,
+                  })
+                : t("No registered endpoint")}
             </Badge>
-            <Badge variant={activeCalls ? "success" : "muted"}>{activeCalls} active call</Badge>
+            <Badge variant={activeCalls ? "success" : "muted"}>
+              {t(activeCalls === 1 ? "{{count}} active call" : "{{count}} active calls", { count: activeCalls })}
+            </Badge>
           </div>
           {registrations.map((registration) => (
             <div key={registration.contact} className="rounded-lg border p-3 text-sm">
-              <div className="font-medium">{registration.sip_user}</div>
-              <div className="break-all text-muted-foreground">{registration.contact}</div>
+              <div className="font-medium">{registration.client_name || t("Unknown SIP client")}</div>
+              <div className="text-xs text-muted-foreground">
+                {registration.sip_user}
+                {registration.source_ip ? ` · ${registration.source_ip}` : ""}
+              </div>
+              <div className="break-all text-xs text-muted-foreground">{registration.contact}</div>
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
@@ -110,9 +127,9 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" /> Remote phonebook
+            <Users className="h-5 w-5" /> {t("Remote phonebook")}
           </CardTitle>
-          <CardDescription>WhatsApp contacts with resolved telephone numbers.</CardDescription>
+          <CardDescription>{t("WhatsApp contacts with resolved telephone numbers.")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {feeds ? (
@@ -123,7 +140,7 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
             </>
           ) : (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading phonebook URLs
+              <Loader2 className="h-4 w-4 animate-spin" /> {t("Loading phonebook URLs")}
             </div>
           )}
         </CardContent>
@@ -132,17 +149,21 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <PhoneCall className="h-5 w-5" /> Routing behavior
+            <PhoneCall className="h-5 w-5" /> {t("Routing behavior")}
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm md:grid-cols-2">
           <div className="rounded-lg border p-3">
-            <div className="font-medium">WhatsApp to SIP</div>
-            <div className="text-muted-foreground">The WhatsApp call is accepted only after the SIP endpoint answers.</div>
+            <div className="font-medium">{t("WhatsApp to SIP")}</div>
+            <div className="text-muted-foreground">
+              {t("The WhatsApp call is accepted only after the SIP endpoint answers.")}
+            </div>
           </div>
           <div className="rounded-lg border p-3">
-            <div className="font-medium">SIP to WhatsApp</div>
-            <div className="text-muted-foreground">Dial an international number without the plus sign, for example 628123456789.</div>
+            <div className="font-medium">{t("SIP to WhatsApp")}</div>
+            <div className="text-muted-foreground">
+              {t("Dial an international number without the plus sign, for example 628123456789.")}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -151,6 +172,7 @@ export const RelayDashboard = ({ session }: { session: SessionInfo }) => {
 };
 
 const Feed = ({ label, value }: { label: string; value: string }) => {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-1 rounded-lg border p-3">
@@ -160,11 +182,15 @@ const Feed = ({ label, value }: { label: string; value: string }) => {
         <Button
           size="icon"
           variant="ghost"
+          aria-label={`${t("Copy")} ${label}`}
           onClick={() => {
-            void copy(value).then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            });
+            void copyText(value)
+              .then(() => {
+                toast.success(t("Copied"));
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => toast.error(t("Could not copy")));
           }}
         >
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}

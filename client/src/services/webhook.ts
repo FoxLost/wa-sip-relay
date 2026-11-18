@@ -10,11 +10,11 @@ export type WebhookItem = {
   id: string;
   name: string;
   url: string;
-  /** true se há secret configurado (o valor nunca é devolvido). */
+  /** Whether a secret is configured; the value is never returned. */
   hasSecret: boolean;
-  /** Filtro de eventos (vazio = todos). */
+  /** Event filter; empty means all events. */
   events: string[];
-  /** Não entrega eventos de grupo. */
+  /** Do not deliver group events. */
   ignoreGroups: boolean;
   status: WebhookState;
 };
@@ -22,7 +22,7 @@ export type WebhookItem = {
 export type WebhookInput = {
   name: string;
   url: string;
-  /** Ausente = mantém o secret atual; "" = remove. */
+  /** Omitted keeps the current secret; an empty string removes it. */
   secret?: string;
   events: string[];
   ignoreGroups: boolean;
