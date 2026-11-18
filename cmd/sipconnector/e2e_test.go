@@ -71,16 +71,24 @@ func (p *fakePBX) exigeDigest(req *sip.Request, tx sip.ServerTransaction, ramal 
 	return false
 }
 
-func startFakePBX(t *testing.T, ctx context.Context) *fakePBX {
+func startFakePBX(t *testing.T, creds map[string][2]string) *fakePBX {
 	t.Helper()
-	p := &fakePBX{port: freeUDPPort(t), registered: make(chan struct{}, 4), nonces: newNonceStore()}
+	sipConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &fakePBX{
+		port:       sipConn.LocalAddr().(*net.UDPAddr).Port,
+		registered: make(chan struct{}, 4),
+		creds:      creds,
+		nonces:     newNonceStore(),
+	}
 	ua, _ := sipgo.NewUA(sipgo.WithUserAgent("fake-pbx"))
 	srv, _ := sipgo.NewServer(ua)
 	cli, _ := sipgo.NewClient(ua, sipgo.WithClientHostname("127.0.0.1"))
 	p.dialog = &sipgo.DialogUA{Client: cli, ContactHDR: sip.ContactHeader{
 		Address: sip.Uri{Scheme: "sip", User: "pbx", Host: "127.0.0.1", Port: p.port},
 	}}
-	var err error
 	if p.rtp, err = net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,12 +139,18 @@ func startFakePBX(t *testing.T, ctx context.Context) *fakePBX {
 		}
 	})
 	srv.OnRefer(func(req *sip.Request, tx sip.ServerTransaction) {
-		if p.onRefer != nil {
-			p.onRefer(req, tx)
+		p.mu.Lock()
+		onRefer := p.onRefer
+		p.mu.Unlock()
+		if onRefer != nil {
+			onRefer(req, tx)
 		}
 	})
-	go func() { _ = srv.ListenAndServe(ctx, "udp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p.port))) }()
-	t.Cleanup(func() { p.rtp.Close() })
+	go func() { _ = srv.ServeUDP(sipConn) }()
+	t.Cleanup(func() {
+		_ = sipConn.Close()
+		_ = p.rtp.Close()
+	})
 	return p
 }
 
@@ -177,8 +191,9 @@ func startConnector(t *testing.T, ctx context.Context) *server {
 	if s.sip, err = newSipUA(s); err != nil {
 		t.Fatal(err)
 	}
-	s.sip.start(ctx)
-	time.Sleep(100 * time.Millisecond)
+	if err := s.sip.start(ctx); err != nil {
+		t.Fatal(err)
+	}
 	return s
 }
 
@@ -202,7 +217,7 @@ func awaitEvent(t *testing.T, sub *subscriber, typ string) map[string]any {
 func TestEndToEndWithFakePBX(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pbx := startFakePBX(t, ctx)
+	pbx := startFakePBX(t, nil)
 	s := startConnector(t, ctx)
 
 	line := Line{ID: "inbox16", AccountID: 1, InboxID: 16, Enabled: true, Mode: modeRegisterOut,
@@ -380,6 +395,7 @@ func TestEndToEndWithFakePBX(t *testing.T) {
 
 	t.Run("transferência para ramal por REFER", func(t *testing.T) {
 		referred := make(chan string, 1)
+		pbx.mu.Lock()
 		pbx.onRefer = func(req *sip.Request, tx sip.ServerTransaction) {
 			_ = tx.Respond(sip.NewResponseFromRequest(req, 202, "Accepted", nil))
 			referred <- req.GetHeader("Refer-To").Value()
@@ -397,6 +413,7 @@ func TestEndToEndWithFakePBX(t *testing.T) {
 				_, _ = d.Do(nctx, n)
 			}()
 		}
+		pbx.mu.Unlock()
 		from := &sip.FromHeader{Address: sip.Uri{Scheme: "sip", User: "5561955554444", Host: "127.0.0.1"}, Params: sip.NewParams()}
 		from.Params.Add("tag", generateID(8))
 		target := sip.Uri{Scheme: "sip", User: contactUserFor("inbox16", ""), Host: "127.0.0.1", Port: s.cfg.SIPAdvertisePort}
@@ -501,8 +518,10 @@ func TestEndToEndWithFakePBX(t *testing.T) {
 func TestAuthIDSeparadoDoRamal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	pbx := startFakePBX(t, ctx)
-	pbx.creds = map[string][2]string{"800": {"Xk7pQ2mZ", "s3nha"}, "201": {"Ab12Cd34", "outra"}}
+	pbx := startFakePBX(t, map[string][2]string{
+		"800": {"Xk7pQ2mZ", "s3nha"},
+		"201": {"Ab12Cd34", "outra"},
+	})
 	s := startConnector(t, ctx)
 
 	line := Line{ID: "inbox3cx", AccountID: 1, Enabled: true, Mode: modeRegisterOut, Host: "127.0.0.1",

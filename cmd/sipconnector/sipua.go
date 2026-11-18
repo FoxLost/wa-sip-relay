@@ -68,15 +68,45 @@ func newSipUA(s *server) (*sipUA, error) {
 	return u, nil
 }
 
-func (u *sipUA) start(ctx context.Context) {
-	for _, network := range []string{"udp", "tcp"} {
-		go func(n string) {
-			if err := u.srv.ListenAndServe(ctx, n, u.s.cfg.SIPAddr); err != nil && ctx.Err() == nil {
-				u.s.log.Error("SIP listener", "network", n, "err", err)
-			}
-		}(network)
+func (u *sipUA) start(ctx context.Context) error {
+	udpAddr, err := net.ResolveUDPAddr("udp", u.s.cfg.SIPAddr)
+	if err != nil {
+		return fmt.Errorf("resolve SIP UDP address: %w", err)
 	}
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return fmt.Errorf("listen SIP UDP: %w", err)
+	}
+
+	tcpAddr, err := net.ResolveTCPAddr("tcp", u.s.cfg.SIPAddr)
+	if err != nil {
+		_ = udpConn.Close()
+		return fmt.Errorf("resolve SIP TCP address: %w", err)
+	}
+	tcpListener, err := net.ListenTCP("tcp", tcpAddr)
+	if err != nil {
+		_ = udpConn.Close()
+		return fmt.Errorf("listen SIP TCP: %w", err)
+	}
+
+	go func() {
+		<-ctx.Done()
+		_ = udpConn.Close()
+		_ = tcpListener.Close()
+	}()
+	go func() {
+		if err := u.srv.ServeUDP(udpConn); err != nil && ctx.Err() == nil {
+			u.s.log.Error("SIP listener", "network", "udp", "err", err)
+		}
+	}()
+	go func() {
+		if err := u.srv.ServeTCP(tcpListener); err != nil && ctx.Err() == nil {
+			u.s.log.Error("SIP listener", "network", "tcp", "err", err)
+		}
+	}()
+
 	u.s.log.Info("SIP no ar", "addr", u.s.cfg.SIPAddr, "public", u.s.cfg.PublicIP)
+	return nil
 }
 
 func (u *sipUA) contactURI(user string) sip.Uri {

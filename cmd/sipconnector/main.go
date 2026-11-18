@@ -52,7 +52,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	s.sip.start(ctx)
+	if err := s.sip.start(ctx); err != nil {
+		log.Error("SIP", "err", err)
+		os.Exit(1)
+	}
 	for _, l := range st.all() {
 		s.sip.applyLine(l)
 	}

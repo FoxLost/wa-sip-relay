@@ -46,8 +46,8 @@ type SessionInfo struct {
 	State     string `json:"state"`
 	Paired    bool   `json:"paired"`
 	Recording bool   `json:"recording"`
-	SIPUser string `json:"sip_user"`
-	SIPURL  string `json:"sip_url"`
+	SIPUser   string `json:"sip_user"`
+	SIPURL    string `json:"sip_url"`
 	// Modelo 2 (registro em PBX externo).
 	SIPExtEnabled bool   `json:"sip_ext_enabled"`
 	SIPExtHost    string `json:"sip_ext_host"`

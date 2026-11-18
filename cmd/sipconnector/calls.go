@@ -353,7 +353,12 @@ func (c *Call) reject() error {
 func (c *Call) hangup(reason string) {
 	c.mu.Lock()
 	srv, cli, cancel, status := c.srv, c.cli, c.cancelDial, c.status
+	resources, ok := c.beginEndLocked()
 	c.mu.Unlock()
+	if !ok {
+		return
+	}
+
 	ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
 	defer done()
 	switch {
@@ -366,38 +371,56 @@ func (c *Call) hangup(reason string) {
 	case cli != nil:
 		_ = cli.Bye(ctx)
 	}
-	c.end(reason)
+	c.finishEnd(reason, resources)
 }
 
-// end é idempotente: libera tudo e avisa todo mundo.
-func (c *Call) end(reason string) {
-	c.mu.Lock()
+type callEndResources struct {
+	webrtc *webrtcLeg
+	ws     *wsLeg
+	owner  *string
+}
+
+// beginEndLocked reserves the terminal reason before SIP teardown can report
+// the resulting dialog closure as a remote hangup. The caller must hold c.mu.
+func (c *Call) beginEndLocked() (callEndResources, bool) {
 	if c.ended {
-		c.mu.Unlock()
-		return
+		return callEndResources{}, false
 	}
 	c.ended = true
 	c.status = statusEnded
 	if c.ringTimer != nil {
 		c.ringTimer.Stop()
 	}
-	wr, ws, owner := c.webrtc, c.ws, c.owner
+	resources := callEndResources{webrtc: c.webrtc, ws: c.ws, owner: c.owner}
 	c.webrtc, c.ws = nil, nil
 	close(c.stop)
-	c.mu.Unlock()
+	return resources, true
+}
 
-	if ws != nil {
-		ws.sendEvent(map[string]any{"type": "call-ended", "id": c.ID, "reason": reason})
-		ws.close()
+// end is idempotent: the first termination source owns the reason.
+func (c *Call) end(reason string) {
+	c.mu.Lock()
+	resources, ok := c.beginEndLocked()
+	c.mu.Unlock()
+	if !ok {
+		return
 	}
-	if wr != nil {
-		wr.close()
+	c.finishEnd(reason, resources)
+}
+
+func (c *Call) finishEnd(reason string, resources callEndResources) {
+	if resources.ws != nil {
+		resources.ws.sendEvent(map[string]any{"type": "call-ended", "id": c.ID, "reason": reason})
+		resources.ws.close()
+	}
+	if resources.webrtc != nil {
+		resources.webrtc.close()
 	}
 	c.leg.close()
 	c.settle()
 	c.s.calls.remove(c)
 	c.s.broker.emit(c.AccountID, map[string]any{
-		"type": "call-ended", "sessionId": c.LineID, "id": c.ID, "owner": owner,
+		"type": "call-ended", "sessionId": c.LineID, "id": c.ID, "owner": resources.owner,
 		"reason": reason, "endedAt": time.Now().UnixMilli(),
 	})
 	c.s.broker.emit(c.AccountID, c.s.calls.listEvent(c.AccountID))
