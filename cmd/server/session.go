@@ -780,14 +780,16 @@ func (s *Session) handleEvent(rawEvt any) {
 		go s.keepPresenceActive(ctx)
 		s.refreshMessageCappingSoon(15 * time.Second)
 	case *events.AppStateSyncComplete:
-		// Pareamento novo: o pushname real só chega no full sync do
-		// critical_block, que não emite PushNameSetting.
+		// Pairing can populate the profile name during the critical app-state
+		// sync without emitting PushNameSetting.
 		if evt.Name == appstate.WAPatchCriticalBlock {
 			go s.keepPresenceActive(ctx)
+			s.mgr.broker.emitSessionList(s.mgr.infos())
 		}
 	case *events.PushNameSetting:
-		// O pushname chegou (às vezes depois do Connected): reenvia a presença,
-		// pois SendPresence falha enquanto o nome não está no store.
+		// The push name arrived after Connected. Refresh the account labels and
+		// resend presence, which fails while the name is unavailable.
+		s.mgr.broker.emitSessionList(s.mgr.infos())
 		go s.keepPresenceActive(ctx)
 	case *events.LoggedOut:
 		s.setAuth(AuthSnapshot{State: "logged_out", Paired: false})
@@ -1022,8 +1024,14 @@ func (s *Session) notifyDisconnected(reason, action string) {
 
 func (s *Session) info() SessionInfo {
 	jid := ""
+	name := s.name
 	if id := s.client.Store.ID; id != nil {
 		jid = id.String()
+	}
+	if pushName := strings.TrimSpace(s.client.Store.PushName); pushName != "" {
+		name = pushName
+	} else if businessName := strings.TrimSpace(s.client.Store.BusinessName); businessName != "" {
+		name = businessName
 	}
 	s.mu.Lock()
 	a := s.auth
@@ -1043,7 +1051,7 @@ func (s *Session) info() SessionInfo {
 	extErr := s.sipExtError
 	s.mu.Unlock()
 	return SessionInfo{
-		ID: s.id, Name: s.name, JID: jid, LastJID: last, State: a.State,
+		ID: s.id, Name: name, JID: jid, LastJID: last, State: a.State,
 		Paired: a.Paired || jid != "", Recording: rec,
 		SIPUser: s.SIPUser, SIPURL: s.SIPURL,
 		SIPExtEnabled: extEnabled, SIPExtHost: extHost, SIPExtPort: extPort,

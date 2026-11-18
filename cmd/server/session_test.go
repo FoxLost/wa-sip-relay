@@ -3,6 +3,9 @@ package main
 import (
 	"encoding/json"
 	"testing"
+
+	"go.mau.fi/whatsmeow"
+	waStore "go.mau.fi/whatsmeow/store"
 )
 
 // O espelhamento no Chatwoot decide pela ORIGEM da mensagem: o que sai do agente
@@ -90,5 +93,32 @@ func TestSetChatwootPreservaFlagsAusentes(t *testing.T) {
 	}
 	if cfg.InboxIdentifier != "abc" {
 		t.Fatalf("campo presente no payload não foi aplicado: %+v", cfg)
+	}
+}
+
+func TestSessionInfoUsesWhatsAppProfileName(t *testing.T) {
+	tests := []struct {
+		name         string
+		pushName     string
+		businessName string
+		want         string
+	}{
+		{name: "profile name", pushName: "Alice WhatsApp", businessName: "Alice Store", want: "Alice WhatsApp"},
+		{name: "business fallback", businessName: "Alice Store", want: "Alice Store"},
+		{name: "local fallback", want: "WhatsApp Relay"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			session := &Session{
+				name: "WhatsApp Relay",
+				client: &whatsmeow.Client{Store: &waStore.Device{
+					PushName:     test.pushName,
+					BusinessName: test.businessName,
+				}},
+			}
+			if got := session.info().Name; got != test.want {
+				t.Fatalf("session name = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
