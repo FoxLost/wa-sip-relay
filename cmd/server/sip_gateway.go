@@ -205,7 +205,8 @@ func (gw *SIPGateway) handleRegister(req *sip.Request, tx sip.ServerTransaction)
 
 	// Autenticação Digest MD5 contra a senha SIP da sessão.
 	authHeader := req.GetHeader("Authorization")
-	if authHeader == nil || digestUsername(authHeader.Value()) != sess.SIPUser || !validateDigestAuth(authHeader.Value(), "REGISTER", sess.SIPPass) {
+	expectedUser, expectedPass, _ := sess.directSIPCredentials()
+	if authHeader == nil || digestUsername(authHeader.Value()) != expectedUser || !validateDigestAuth(authHeader.Value(), "REGISTER", expectedPass) {
 		if authHeader != nil {
 			gw.log.Warn("SIP REGISTER: invalid digest", "sip_user", sipUser)
 		}
@@ -748,8 +749,9 @@ func (gw *SIPGateway) inviteFromRegistration(reg *sipRegistration, req *sip.Requ
 // quando a credencial confere; senão responde 401 com o desafio (o PBX/softphone
 // reenvia autenticado) e devolve false.
 func (gw *SIPGateway) challengeInvite(sess *Session, req *sip.Request, tx sip.ServerTransaction) bool {
+	expectedUser, expectedPass, _ := sess.directSIPCredentials()
 	if auth := req.GetHeader("Authorization"); auth != nil {
-		if digestUsername(auth.Value()) == sess.SIPUser && validateDigestAuth(auth.Value(), "INVITE", sess.SIPPass) {
+		if digestUsername(auth.Value()) == expectedUser && validateDigestAuth(auth.Value(), "INVITE", expectedPass) {
 			return true
 		}
 		gw.log.Warn("SIP INVITE: invalid digest", "session", sess.id, "source", req.Source())
@@ -808,7 +810,8 @@ func (gw *SIPGateway) sessionForExtInvite(req *sip.Request) *Session {
 	var match *Session
 	for _, sess := range cands {
 		cfg := sess.sipExtSnapshot()
-		if users[cfg.User] || users[sess.id] || users[sess.SIPUser] {
+		directUser, _, _ := sess.directSIPCredentials()
+		if users[cfg.User] || users[sess.id] || users[directUser] {
 			if match != nil {
 				gw.log.Warn("SIP INVITE: account identity is ambiguous for shared PBX", "source", sourceIP)
 				return nil
@@ -1140,9 +1143,8 @@ func (gw *SIPGateway) findSessionBySIPUser(sipUser string) *Session {
 	gw.sessions.mu.RLock()
 	defer gw.sessions.mu.RUnlock()
 	for _, sess := range gw.sessions.sessions {
-		sess.mu.Lock()
-		match := sess.SIPUser == sipUser
-		sess.mu.Unlock()
+		user, _, _ := sess.directSIPCredentials()
+		match := user == sipUser
 		if match {
 			return sess
 		}

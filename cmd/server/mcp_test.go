@@ -178,11 +178,12 @@ func TestMCPInvokeDispatchesToMux(t *testing.T) {
 
 func TestWithAuthAcceptsBearer(t *testing.T) {
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	h := withAuth(ok, "segredo", "widget", nil)
+	h := withAuth(ok, "segredo", "painel123", "widget", nil)
 	for hdr, want := range map[string]int{
-		"Bearer segredo": http.StatusNoContent,
-		"Bearer errado":  http.StatusUnauthorized,
-		"Bearer widget":  http.StatusUnauthorized, // chave de widget não libera o MCP
+		"Bearer segredo":   http.StatusNoContent,
+		"Bearer painel123": http.StatusNoContent,
+		"Bearer errado":    http.StatusUnauthorized,
+		"Bearer widget":    http.StatusUnauthorized, // chave de widget não libera o MCP
 	} {
 		rec := mcpPost(t, h, `{}`, map[string]string{"Authorization": hdr})
 		if rec.Code != want {

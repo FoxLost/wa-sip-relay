@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { getClientId } from "@/lib/client-id";
-import { apiUrl, getApiKey } from "@/lib/auth";
+import { apiUrl, getAuthSecret } from "@/lib/auth";
 import type { SessionInfo } from "@/types/session";
 
 export const listSessions = () =>
@@ -14,7 +14,7 @@ export const deleteSession = (id: string) => apiDelete(`/api/sessions/${id}`);
 const postVoid = async (path: string): Promise<void> => {
   const r = await fetch(apiUrl(path), {
     method: "POST",
-    headers: { "X-Client-Id": getClientId(), "X-API-Key": getApiKey(), "Content-Type": "application/json" },
+    headers: { "X-Client-Id": getClientId(), "X-API-Key": getAuthSecret(), "Content-Type": "application/json" },
     body: "{}",
   });
   if (!r.ok) throw new Error(`${path} ${r.status}`);
@@ -35,7 +35,7 @@ export const submitPasskeyAssertion = (id: string, assertion: unknown) =>
 export const setRecording = async (id: string, enabled: boolean): Promise<void> => {
   const r = await fetch(apiUrl(`/api/sessions/${id}/recording`), {
     method: "PUT",
-    headers: { "X-Client-Id": getClientId(), "X-API-Key": getApiKey(), "Content-Type": "application/json" },
+    headers: { "X-Client-Id": getClientId(), "X-API-Key": getAuthSecret(), "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
   });
   if (!r.ok) throw new Error(`recording ${r.status}`);
@@ -57,6 +57,9 @@ export type SIPConfig = {
 export const getSIP = (id: string) =>
   apiGet<SIPConfig>(`/api/sessions/${id}/sip`);
 
+export const setSIP = (id: string, sipUser: string, sipPass: string) =>
+  apiPost<SIPConfig>(`/api/sessions/${id}/sip`, { sip_user: sipUser, sip_pass: sipPass });
+
 // External SIP mode: register this session with a PBX.
 export type SIPExtConfig = {
   /** Authentication username when it differs from the extension, such as 3CX Authentication ID. */
@@ -68,7 +71,7 @@ export type SIPExtConfig = {
   pass: string;
   dest: string;
   proxy?: string;
-  // INVITE que chega no ramal: originate (disca no WhatsApp) | agent (agente de voz) | auto
+  // An INVITE to the PBX extension can originate a WhatsApp call, enter agent mode, or select automatically.
   inboundMode?: "originate" | "agent" | "auto";
   agentAutoAnswer?: boolean;
   agentRingTimeoutSeconds?: number;
@@ -86,7 +89,7 @@ export const setSIPExt = (id: string, cfg: Omit<SIPExtConfig, "status" | "error"
 export const setProxy = async (id: string, proxy: string): Promise<void> => {
   const r = await fetch(apiUrl(`/api/sessions/${id}/proxy`), {
     method: "PUT",
-    headers: { "X-Client-Id": getClientId(), "X-API-Key": getApiKey(), "Content-Type": "application/json" },
+    headers: { "X-Client-Id": getClientId(), "X-API-Key": getAuthSecret(), "Content-Type": "application/json" },
     body: JSON.stringify({ proxy }),
   });
   if (!r.ok) {

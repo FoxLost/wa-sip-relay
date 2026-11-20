@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -54,7 +55,7 @@ func (s *server) routes() http.Handler {
 	s.apiMux = mux
 	var handler http.Handler = mux
 	if key := os.Getenv("WACALLS_API_KEY"); key != "" {
-		handler = withAuth(handler, key, "", nil)
+		handler = withAuth(handler, key, os.Getenv("WACALLS_WEBUI_PASSWORD"), "", nil)
 	}
 	return withCORS(handler)
 }
@@ -72,34 +73,31 @@ func withCORS(h http.Handler) http.Handler {
 	})
 }
 
-// withAuth protege as rotas /api/* com uma API key (header X-API-Key,
-// Authorization: Bearer ou ?apiKey=).
-// Exceções: o webhook do Chatwoot (chamado externamente pelo próprio Chatwoot)
-// e os arquivos estáticos do painel (precisam carregar a tela de login).
+// withAuth protects /api/* with either the integration API key or the Web UI
+// password (X-API-Key, Authorization: Bearer, ?apiKey=, or ?auth=).
+// Exceptions: the Chatwoot webhook, which Chatwoot calls externally, and static
+// panel files, which must load before authentication.
 //
-// Segurança (issue #10): a chave-MESTRA (key) libera tudo; a chave de WIDGET
-// (widgetKey, opcional) libera SÓ a superfície que o widget do Chatwoot precisa
-// (resolve, eventos SSE e operações de chamada). Como o widget expõe a chave no
-// data-api-key/URL do EventSource, usar a de widget limita o estrago se ela
-// vazar: quem a pega NÃO consegue listar/apagar sessões, mandar mensagens nem
-// mexer na config do Chatwoot.
+// The master API key and Web UI password both grant administrative access. The
+// widget key grants only the minimal Chatwoot widget surface because it is
+// exposed in data attributes and EventSource URLs.
 //
-// sessionScope (opcional) devolve conta/caixa do Chatwoot de uma sessão: com ele, um
-// token de widget só opera chamadas das sessões da própria conta (e caixa, se fixada).
-func withAuth(h http.Handler, key, widgetKey string, sessionScope func(sid string) (acct, inbox int)) http.Handler {
+// sessionScope optionally returns the Chatwoot account/inbox for a session so
+// widget tokens cannot operate on another account.
+func withAuth(h http.Handler, key, webPassword, widgetKey string, sessionScope func(sid string) (acct, inbox int)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		guarded := strings.HasPrefix(p, "/api/") && !strings.HasSuffix(p, "/chatwoot/webhook")
 		if guarded {
 			got := requestAPIKey(r)
-			if got == key {
-				h.ServeHTTP(w, r) // chave-mestra: libera tudo
+			if secureCredentialEqual(got, key) || secureCredentialEqual(got, webPassword) {
+				h.ServeHTTP(w, r)
 				return
 			}
-			// Superfície de widget: chave estática (por instância) OU token efêmero (por conta).
+			// Widget surface: accept the instance widget key or a per-account ephemeral token.
 			if widgetAllowed(r) {
 				if widgetKey != "" && got == widgetKey {
-					// sem conta o SSE viraria "painel admin" e receberia tudo (QR inclusive).
+					// Requiring an account prevents SSE from exposing the full administration event stream.
 					if p == "/api/events" && asInt(r.URL.Query().Get("accountId")) == 0 && accountFromClientID(clientID(r)) == 0 {
 						writeJSON(w, http.StatusForbidden, map[string]string{"error": "account_required"})
 						return
@@ -108,7 +106,7 @@ func withAuth(h http.Handler, key, widgetKey string, sessionScope func(sid strin
 					return
 				}
 				if claims, ok := parseWidgetToken(got); ok {
-					// escopo de conta no SSE: um token só recebe eventos da sua própria conta.
+					// Scope SSE events to the account carried by the widget token.
 					if p == "/api/events" && !widgetTokenAccountMatches(r, claims) {
 						writeJSON(w, http.StatusForbidden, map[string]string{"error": "account_scope_mismatch"})
 						return
@@ -117,7 +115,7 @@ func withAuth(h http.Handler, key, widgetKey string, sessionScope func(sid strin
 						writeJSON(w, http.StatusForbidden, map[string]string{"error": "account_scope_mismatch"})
 						return
 					}
-					// e só opera chamadas de sessões da própria conta/caixa.
+					// Allow call operations only for sessions in the token's account and inbox.
 					if sid := sessionIDFromPath(p); sid != "" && sessionScope != nil {
 						acct, inbox := sessionScope(sid)
 						if acct != claims.AccountID || (claims.InboxID > 0 && inbox != claims.InboxID) {
@@ -146,7 +144,7 @@ func sessionIDFromPath(p string) string {
 	return sid
 }
 
-// requestAPIKey extrai a chave da requisição (X-API-Key, Bearer ou ?apiKey=).
+// requestAPIKey extracts an API key, Web UI password, or scoped token.
 func requestAPIKey(r *http.Request) string {
 	got := r.Header.Get("X-API-Key")
 	if got == "" {
@@ -155,7 +153,15 @@ func requestAPIKey(r *http.Request) string {
 	if got == "" {
 		got = r.URL.Query().Get("apiKey")
 	}
+	if got == "" {
+		got = r.URL.Query().Get("auth")
+	}
 	return got
+}
+
+func secureCredentialEqual(got, want string) bool {
+	return want != "" && len(got) == len(want) &&
+		subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 // eventInboxes lê as caixas (inbox) do Chatwoot que o assinante do SSE atende:

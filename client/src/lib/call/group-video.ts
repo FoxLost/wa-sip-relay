@@ -1,4 +1,4 @@
-import { getApiBase, getApiKey } from "@/lib/auth";
+import { getApiBase, getAuthSecret } from "@/lib/auth";
 import { VideoSender, VideoReceiver, videoSupported } from "./video-codec";
 
 // GroupVideoBridge carries H264 video for group calls between the browser and the gateway
@@ -48,10 +48,10 @@ export class GroupVideoBridge {
 
     const base = getApiBase();
     const wsBase = base.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
-    const apiKey = getApiKey();
+    const auth = getAuthSecret();
     const url =
       `${wsBase}/api/sessions/${this.sid}/calls/group/video-ws` +
-      (apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : "");
+      (auth ? `?auth=${encodeURIComponent(auth)}` : "");
 
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url, ["h264-group"]);

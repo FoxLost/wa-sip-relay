@@ -1,6 +1,6 @@
 import { apiPost, apiDelete } from "@/lib/api";
 import { getClientId } from "@/lib/client-id";
-import { apiUrl, getApiKey } from "@/lib/auth";
+import { apiUrl, getAuthSecret } from "@/lib/auth";
 
 export const startCall = (sid: string, phone: string, record: boolean, video: boolean) =>
   apiPost<{ call: { callId: string } }>(`/api/sessions/${sid}/calls`, {
@@ -16,7 +16,7 @@ export const acceptCall = (sid: string, callId: string) =>
 export const rejectCall = async (sid: string, callId: string): Promise<void> => {
   const r = await fetch(apiUrl(`/api/sessions/${sid}/calls/${callId}/reject`), {
     method: "POST",
-    headers: { "X-Client-Id": getClientId(), "X-API-Key": getApiKey(), "Content-Type": "application/json" },
+    headers: { "X-Client-Id": getClientId(), "X-API-Key": getAuthSecret(), "Content-Type": "application/json" },
     body: "{}",
   });
   if (!r.ok) throw new Error(`reject ${r.status}`);

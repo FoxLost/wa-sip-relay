@@ -1,9 +1,9 @@
 import { getClientId } from "./client-id";
-import { apiUrl, getApiKey, clearAuth } from "./auth";
+import { apiUrl, getAuthSecret, clearAuth } from "./auth";
 
 const baseHeaders = (): HeadersInit => ({
   "X-Client-Id": getClientId(),
-  "X-API-Key": getApiKey(),
+  "X-API-Key": getAuthSecret(),
   "Content-Type": "application/json",
 });
 
@@ -13,6 +13,17 @@ const guard = (status: number) => {
     clearAuth();
     location.reload();
   }
+};
+
+const responseError = async (response: Response, fallback: string): Promise<Error> => {
+  const text = await response.text().catch(() => "");
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error) return new Error(parsed.error);
+  } catch {
+    // Keep the raw response as diagnostic context when it is not JSON.
+  }
+  return new Error(text ? `${fallback}: ${text}` : fallback);
 };
 
 export const apiGet = async <T>(path: string): Promise<T> => {
@@ -28,8 +39,7 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "POST", headers: baseHeaders(), body: JSON.stringify(body) });
   if (!r.ok) {
     guard(r.status);
-    const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    throw await responseError(r, `${path} ${r.status}`);
   }
   return r.json() as Promise<T>;
 };
@@ -38,8 +48,7 @@ export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "PUT", headers: baseHeaders(), body: JSON.stringify(body) });
   if (!r.ok) {
     guard(r.status);
-    const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    throw await responseError(r, `${path} ${r.status}`);
   }
   return r.json() as Promise<T>;
 };

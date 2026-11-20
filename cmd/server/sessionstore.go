@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -260,14 +261,14 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	return &sessionStore{db: db}, nil
 }
 
-// genSIPCredential gera um token hex aleatório para usuário/senha SIP.
+// genSIPCredential returns a random hexadecimal token for SIP credentials.
 func genSIPCredential(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// generateRandomString devolve uma string hex aleatória com n caracteres.
+// generateRandomString returns a random hexadecimal string with n characters.
 func generateRandomString(n int) string {
 	b := make([]byte, (n+1)/2)
 	rand.Read(b)
@@ -315,12 +316,17 @@ func (s *sessionStore) insert(ctx context.Context, id, name string) (sipUser, si
 	return "", "", fmt.Errorf("generate unique SIP username: %w", err)
 }
 
+var errSIPUsernameExists = errors.New("SIP username already exists")
+
 func (s *sessionStore) setSIP(ctx context.Context, id, sipUser, sipPass string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET sip_user = $1, sip_pass = $2 WHERE id = $3`, sipUser, sipPass, id)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: sessions.sip_user") {
+		return fmt.Errorf("%w: %s", errSIPUsernameExists, sipUser)
+	}
 	return err
 }
 
-// setSIPExt persiste a config do modelo 2 (registro em PBX externo).
+// setSIPExt persists mode 2 configuration for registration with an external PBX.
 func (s *sessionStore) setSIPExt(ctx context.Context, id string, enabled bool, host string, port int, user, pass, dest, proxy string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET sip_ext_enabled = $1, sip_ext_host = $2, sip_ext_port = $3, sip_ext_user = $4, sip_ext_pass = $5, sip_ext_dest = $6, sip_ext_proxy = $7 WHERE id = $8`,

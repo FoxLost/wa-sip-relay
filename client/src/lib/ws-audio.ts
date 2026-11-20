@@ -9,7 +9,7 @@
  *   - Downlink: the same encoding
  */
 
-import { getApiBase, getApiKey } from "./auth";
+import { getApiBase, getAuthSecret } from "./auth";
 
 const SAMPLE_RATE = 16_000; // Must match the Go server.
 // ScriptProcessorNode buffer size must be a power of two. At 16 kHz, 512 samples is about 32 ms.
@@ -71,10 +71,10 @@ export class WSAudioBridge {
     const wsBase = base
       .replace(/^https:\/\//, "wss://")
       .replace(/^http:\/\//, "ws://");
-    const apiKey = getApiKey();
+    const auth = getAuthSecret();
     const url =
       `${wsBase}/api/sessions/${this.sid}/calls/${this.callId}/ws` +
-      (apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : "");
+      (auth ? `?auth=${encodeURIComponent(auth)}` : "");
 
     this.ws = new WebSocket(url, ["pcm16"]);
     this.ws.binaryType = "arraybuffer";

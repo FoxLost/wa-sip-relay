@@ -60,6 +60,10 @@ func main() {
 		log.Error("WACALLS_API_KEY is required")
 		os.Exit(2)
 	}
+	if len(os.Getenv("WACALLS_WEBUI_PASSWORD")) < 8 {
+		log.Error("WACALLS_WEBUI_PASSWORD must contain at least 8 characters")
+		os.Exit(2)
+	}
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

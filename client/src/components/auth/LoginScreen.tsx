@@ -10,7 +10,7 @@ import { setAuth } from "@/lib/auth";
 export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
   const { t } = useLanguage();
   const [url, setUrl] = useState(window.location.origin);
-  const [key, setKey] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -19,12 +19,12 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
     setErr("");
     const base = url.replace(/\/+$/, "");
     try {
-      const r = await fetch(`${base}/api/config`, { headers: { "X-API-Key": key } });
+      const r = await fetch(`${base}/api/config`, { headers: { "X-API-Key": password } });
       if (!r.ok) {
-        setErr(r.status === 401 ? t("Invalid API key") : t("Error {{status}}", { status: r.status }));
+        setErr(r.status === 401 ? t("Invalid password") : t("Error {{status}}", { status: r.status }));
         return;
       }
-      setAuth(base, key);
+      setAuth(base, password);
       onSuccess();
     } catch {
       setErr(t("Could not connect to the provided URL"));
@@ -41,7 +41,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
         </div>
         <div className="space-y-1 text-center">
           <h1 className="text-xl font-semibold">WA SIP Relay</h1>
-          <p className="text-sm text-muted-foreground">{t("Sign in with the server URL and API key.")}</p>
+          <p className="text-sm text-muted-foreground">{t("Sign in with the administration password.")}</p>
         </div>
         <div className="space-y-3">
           <div className="space-y-1">
@@ -49,19 +49,20 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
             <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://relay.example.com" />
           </div>
           <div className="space-y-1">
-            <Label>{t("API key")}</Label>
+            <Label>{t("Administration password")}</Label>
             <Input
               type="password"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") submit();
               }}
-              placeholder={t("your API key")}
+              autoComplete="current-password"
+              placeholder={t("Enter your password")}
             />
           </div>
           {err && <p className="text-sm text-destructive">{err}</p>}
-          <Button className="w-full" disabled={busy || !key.trim()} onClick={submit}>
+          <Button className="w-full" disabled={busy || !password} onClick={submit}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t("Sign in")}
           </Button>

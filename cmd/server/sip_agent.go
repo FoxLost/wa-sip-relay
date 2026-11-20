@@ -104,7 +104,8 @@ func wantsAgent(sess *Session, req *sip.Request) bool {
 		if to := req.To(); to != nil && target == "" {
 			target = to.Address.User
 		}
-		return target == "" || (cfg.User != "" && target == cfg.User) || (sess.SIPUser != "" && target == sess.SIPUser)
+		directUser, _, _ := sess.directSIPCredentials()
+		return target == "" || (cfg.User != "" && target == cfg.User) || (directUser != "" && target == directUser)
 	}
 	return false
 }

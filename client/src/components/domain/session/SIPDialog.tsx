@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
 import { useLanguage } from "@/lib/i18n";
-import { getSIP, getSIPExt, setSIPExt, type SIPConfig, type SIPExtConfig } from "@/services/sessions";
+import { getSIP, setSIP, getSIPExt, setSIPExt, type SIPConfig, type SIPExtConfig } from "@/services/sessions";
 import type { SessionInfo } from "@/types/session";
 
 const SIP_PORT = 5060;
@@ -38,7 +38,6 @@ const emptyExt: SIPExtConfig = {
   inboundMode: "originate",
   agentAutoAnswer: false,
 };
-
 
 const StatusBadge = ({ status, error }: { status?: string; error?: string }) => {
   const { t } = useLanguage();
@@ -103,6 +102,29 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
   const setE = <K extends keyof SIPExtConfig>(k: K, v: SIPExtConfig[K]) =>
     setExt((prev) => ({ ...prev, [k]: v }));
 
+  const saveDirect = async () => {
+    if (!direct) return;
+    const user = direct.sip_user.trim();
+    if (!/^[A-Za-z0-9_.-]{3,64}$/.test(user)) {
+      toast.error(t("SIP username must be 3-64 characters using letters, numbers, dot, dash, or underscore"));
+      return;
+    }
+    if (direct.sip_pass.length < 8 || direct.sip_pass.length > 128) {
+      toast.error(t("SIP password must be 8-128 characters"));
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await setSIP(session.id, user, direct.sip_pass);
+      setDirect(updated);
+      toast.success(t("SIP credentials saved"));
+    } catch (e) {
+      toast.error(t((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveExt = async () => {
     if (ext.enabled && (!ext.host.trim() || !ext.user.trim())) {
       toast.error(t("Enter the PBX host and username"));
@@ -132,11 +154,28 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
     }
   };
 
-  const Row = ({ label, field, value }: { label: string; field: Field; value: string }) => (
+  const Row = ({
+    label,
+    field,
+    value,
+    onChange,
+  }: {
+    label: string;
+    field: Field;
+    value: string;
+    onChange?: (value: string) => void;
+  }) => (
     <div className="space-y-1">
       <Label>{label}</Label>
       <div className="flex gap-2">
-        <Input readOnly value={value} className="font-mono text-xs" onFocus={(e) => e.target.select()} />
+        <Input
+          readOnly={!onChange}
+          value={value}
+          className="font-mono text-xs"
+          autoComplete="off"
+          onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+          onFocus={(event) => event.target.select()}
+        />
         <Button type="button" variant="outline" size="icon" onClick={() => void copy(field, value)} aria-label={t("Copy {{label}}", { label })}>
           {copied === field ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
         </Button>
@@ -190,17 +229,25 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
             </p>
             <Row label={t("SIP server (host:port)")} field="server" value={server} />
             <Row label={t("Domain / realm")} field="domain" value={domain} />
-            <Row label={t("SIP username")} field="user" value={sipUser} />
+            <Row
+              label={t("SIP username")}
+              field="user"
+              value={sipUser}
+              onChange={(value) => setDirect((prev) => (prev ? { ...prev, sip_user: value } : prev))}
+            />
 
             <div className="space-y-1">
               <Label>{t("SIP password")}</Label>
               <div className="flex gap-2">
                 <Input
-                  readOnly
                   type={showPass ? "text" : "password"}
                   value={sipPass}
                   className="font-mono text-xs"
-                  onFocus={(e) => e.target.select()}
+                  autoComplete="new-password"
+                  onChange={(event) =>
+                    setDirect((prev) => (prev ? { ...prev, sip_pass: event.target.value } : prev))
+                  }
+                  onFocus={(event) => event.target.select()}
                 />
                 <Button
                   type="button"
@@ -222,6 +269,10 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
                 </Button>
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              {t("Changing either credential disconnects existing SIP registrations. Update the phone or PBX and register again.")}
+            </p>
 
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">{t("Phone or PBX setup")}</p>
@@ -346,7 +397,6 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
               />
             </div>
 
-
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
               <p className="font-medium text-foreground">{t("How it works")}</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
@@ -359,14 +409,21 @@ export const SIPDialog = ({ session }: { session: SessionInfo }) => {
           </div>
         )}
 
-        {tab === "external" ? (
+        {tab === "server" ? (
+          <DialogFooter>
+            <Button disabled={busy || !direct} onClick={() => void saveDirect()}>
+              {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {t("Save credentials")}
+            </Button>
+          </DialogFooter>
+        ) : (
           <DialogFooter>
             <Button disabled={busy} onClick={() => void saveExt()}>
               {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               {t("Save")}
             </Button>
           </DialogFooter>
-        ) : null}
+        )}
       </DialogContent>
     </Dialog>
   );

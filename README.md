@@ -67,14 +67,16 @@ chmod 700 data
 openssl rand -hex 32
 ```
 
-Put the generated value in `WACALLS_API_KEY` inside `.env`. Set
-`WACALLS_PUBLIC_IP` to the host's LAN address, not `127.0.0.1` and not the
-container address.
+Put the generated value in `WACALLS_API_KEY` inside `.env`. Set a different
+password of at least eight characters in `WACALLS_WEBUI_PASSWORD`; this is the
+credential entered on the administration sign-in page. Set `WACALLS_PUBLIC_IP`
+to the host's LAN address, not `127.0.0.1` and not the container address.
 
 Example:
 
 ```dotenv
 WACALLS_API_KEY=replace-with-the-generated-secret
+WACALLS_WEBUI_PASSWORD=replace-with-a-different-admin-password
 WACALLS_PUBLIC_IP=192.168.1.10
 WACALLS_SIP_ADDR=0.0.0.0:5060
 WACALLS_SIP_ADVERTISE_PORT=5060
@@ -111,7 +113,7 @@ Open:
 http://HOST_LAN_IP:8080
 ```
 
-Enter the server URL and API key on the sign-in page.
+Enter the administration password from `WACALLS_WEBUI_PASSWORD` on the sign-in page.
 
 ## Network requirements
 
@@ -161,8 +163,8 @@ relay containers against the same SQLite file.
 ## Direct IP-phone setup
 
 Select the WhatsApp account, then open **SIP → PBX registers here**. Every account
-has a different SIP username and password.
-
+starts with a generated SIP username and password. Both fields can be customized
+and saved from this panel; usernames must remain unique across accounts.
 Configure the phone:
 
 | Phone setting | Value |
@@ -176,6 +178,9 @@ Configure the phone:
 | Preferred codec 1 | PCMU |
 | Preferred codec 2 | PCMA |
 | Registration | Enabled |
+
+Changing a SIP username or password removes that account's current registrations.
+Update the phone or PBX with both saved values and register it again.
 
 
 Dial WhatsApp destinations in international format without `+`, spaces, or a
@@ -324,7 +329,7 @@ docker compose logs --tail=200 relay
 curl -v http://127.0.0.1:8080/livez
 ```
 
-Check TCP 8080 and confirm the API key is set.
+Check TCP 8080 and confirm both `WACALLS_API_KEY` and `WACALLS_WEBUI_PASSWORD` are set.
 
 ### The phone does not register
 
@@ -368,8 +373,11 @@ amd64 and arm64 media builds.
 
 ## Security
 
-- `WACALLS_API_KEY` is mandatory and grants administration access to every
-  configured account.
+- `WACALLS_API_KEY` is mandatory and grants integration/API administration
+  access to every configured account.
+- `WACALLS_WEBUI_PASSWORD` is mandatory, grants the same administrative scope,
+  and is used by the browser panel instead of exposing the integration API key.
+- Use different random values for the API key and Web UI password.
 - SIP uses plain UDP/TCP and digest authentication.
 - RTP is unencrypted.
 - Restrict all service ports to a trusted LAN or VPN.

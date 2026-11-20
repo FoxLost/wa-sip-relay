@@ -1,4 +1,4 @@
-import { getApiBase, getApiKey } from "./auth";
+import { getApiBase, getAuthSecret } from "./auth";
 import type { CallStatus } from "@/types/call";
 import type { SessionInfo, SessionState } from "@/types/session";
 
@@ -46,7 +46,7 @@ class EventStream {
 
   connect(clientId: string): void {
     if (this.#es) return;
-    const url = `${getApiBase()}/api/events?clientId=${encodeURIComponent(clientId)}&apiKey=${encodeURIComponent(getApiKey())}`;
+    const url = `${getApiBase()}/api/events?clientId=${encodeURIComponent(clientId)}&auth=${encodeURIComponent(getAuthSecret())}`;
     this.#es = new EventSource(url);
     this.#es.onmessage = (ev) => {
       try {

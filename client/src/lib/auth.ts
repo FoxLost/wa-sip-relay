@@ -1,25 +1,28 @@
 const URL_KEY = "wacalls.apiUrl";
-const KEY_KEY = "wacalls.apiKey";
+const SECRET_KEY = "wacalls.webPassword";
+const LEGACY_KEY = "wacalls.apiKey";
 
 export const getApiBase = (): string => (localStorage.getItem(URL_KEY) || "").replace(/\/+$/, "");
-export const getApiKey = (): string => localStorage.getItem(KEY_KEY) || "";
-export const isAuthed = (): boolean => !!getApiKey();
+export const getAuthSecret = (): string => localStorage.getItem(SECRET_KEY) || "";
+export const isAuthed = (): boolean => getAuthSecret() !== "";
 
-export const setAuth = (url: string, key: string): void => {
+export const setAuth = (url: string, secret: string): void => {
   localStorage.setItem(URL_KEY, url.replace(/\/+$/, ""));
-  localStorage.setItem(KEY_KEY, key);
+  localStorage.setItem(SECRET_KEY, secret);
+  localStorage.removeItem(LEGACY_KEY);
 };
 
 export const clearAuth = (): void => {
-  localStorage.removeItem(KEY_KEY);
+  localStorage.removeItem(SECRET_KEY);
+  localStorage.removeItem(LEGACY_KEY);
 };
 
 export const apiUrl = (path: string): string => getApiBase() + path;
 
-// checkAuth verifica se o backend aceita (servidor aberto -> 200 mesmo sem key).
+// Verify that the backend accepts the stored administration credential.
 export const checkAuth = async (): Promise<boolean> => {
   try {
-    const r = await fetch(apiUrl("/api/config"), { headers: { "X-API-Key": getApiKey() } });
+    const r = await fetch(apiUrl("/api/config"), { headers: { "X-API-Key": getAuthSecret() } });
     return r.ok;
   } catch {
     return false;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,51 +51,94 @@ func (s *server) handleSIPStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func sipConfigPayload(sess *Session) map[string]any {
+	user, pass, url := sess.directSIPCredentials()
+	return map[string]any{
+		"sip_user":   user,
+		"sip_pass":   pass,
+		"sip_url":    url,
+		"sip_realm":  "astracalls",
+		"sip_port":   5060,
+		"codecs":     []string{"PCMU/8000", "PCMA/8000"},
+		"session_id": sess.id,
+	}
+}
+
+func validSIPUsername(user string) bool {
+	if len(user) < 3 || len(user) > 64 {
+		return false
+	}
+	for _, c := range user {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validSIPPassword(password string) bool {
+	return len(password) >= 8 && len(password) <= 128 &&
+		!strings.ContainsAny(password, "\x00\r\n")
+}
+
 func (s *server) handleSIPConfig(w http.ResponseWriter, r *http.Request) {
-	sid := r.PathValue("sid")
-	sess := s.sessionByID(w, sid)
+	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
 		return
 	}
-
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"sip_user":   sess.SIPUser,
-			"sip_pass":   sess.SIPPass,
-			"sip_url":    sess.SIPURL,
-			"sip_realm":  "astracalls",
-			"sip_port":   5060,
-			"codecs":     []string{"PCMU/8000"},
-			"session_id": sess.id,
-		})
+		writeJSON(w, http.StatusOK, sipConfigPayload(sess))
 		return
 	}
 
-	// POST: atualizar config SIP
 	var body struct {
 		SIPUser string `json:"sip_user"`
 		SIPPass string `json:"sip_pass"`
-		SIPURL  string `json:"sip_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
-	if body.SIPUser != "" {
-		sess.SIPUser = body.SIPUser
+	body.SIPUser = strings.TrimSpace(body.SIPUser)
+	if !validSIPUsername(body.SIPUser) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "SIP username must be 3-64 characters using letters, numbers, dot, dash, or underscore",
+		})
+		return
 	}
-	if body.SIPPass != "" {
-		sess.SIPPass = body.SIPPass
+	if !validSIPPassword(body.SIPPass) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "SIP password must be 8-128 characters without line breaks",
+		})
+		return
 	}
-	if body.SIPURL != "" {
-		sess.SIPURL = body.SIPURL
+
+	sess.sipConfigMu.Lock()
+	err := s.sessions.store.setSIP(r.Context(), sess.id, body.SIPUser, body.SIPPass)
+	if err == nil {
+		sess.setDirectSIPCredentials(body.SIPUser, body.SIPPass)
 	}
-	_ = s.sessions.store.setSIP(r.Context(), sess.id, sess.SIPUser, sess.SIPPass)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	sess.sipConfigMu.Unlock()
+	if errors.Is(err, errSIPUsernameExists) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "SIP username is already used by another account"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save SIP credentials"})
+		return
+	}
+
+	// Existing bindings authenticated with the old credentials must register again.
+	if s.sipGW != nil {
+		s.sipGW.removeDirectRegistrations(sess.id)
+	}
+	writeJSON(w, http.StatusOK, sipConfigPayload(sess))
 }
 
-// handleSIPExtConfig lê/grava a config do MODELO 2: registrar esta sessão num PBX
-// externo (a sessão vira um ramal registrado no Asterisk/FreePBX do cliente).
+// handleSIPExtConfig reads or writes mode 2: register this session as an
+// extension on the customer's external PBX.
 func (s *server) handleSIPExtConfig(w http.ResponseWriter, r *http.Request) {
 	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
@@ -126,7 +170,7 @@ func (s *server) handleSIPExtConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// POST: atualiza e aplica.
+	// POST updates the stored configuration and applies it.
 	var body struct {
 		Enabled bool   `json:"enabled"`
 		Host    string `json:"host"`
@@ -135,9 +179,9 @@ func (s *server) handleSIPExtConfig(w http.ResponseWriter, r *http.Request) {
 		Pass    string `json:"pass"`
 		Dest    string `json:"dest"`
 		Proxy   string `json:"proxy"`
-		// usuário de autenticação (3CX: Authentication ID); ausente = mantém
+		// Authentication username (3CX Authentication ID); nil preserves the value.
 		AuthUser *string `json:"authUser"`
-		// modo agente (opcionais; ausentes = mantém o valor atual)
+		// Optional agent-mode fields; absent values preserve the current setting.
 		InboundMode string `json:"inboundMode"`
 		AutoAnswer  *bool  `json:"agentAutoAnswer"`
 		RingTimeout *int   `json:"agentRingTimeoutSeconds"`

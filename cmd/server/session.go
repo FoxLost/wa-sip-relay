@@ -50,18 +50,19 @@ type Session struct {
 	waContainer *sqlstore.Container
 	waDB        *sql.DB
 
-	mu        sync.Mutex
-	auth      AuthSnapshot
-	webhooks  []WebhookTarget // webhooks da sessão (o "default" é o da rota antiga /webhook)
-	webhookMu sync.Mutex      // serializa alterar+persistir a lista de webhooks
-	avatars   avatarCache     // foto de perfil p/ o Chatwoot (ver avatarcache.go)
-	chatwoot  ChatwootConfig
-	recording bool   // grava as chamadas desta sessão (opt-in)
-	proxy     string // proxy de saída da conexão WhatsApp (http/https/socks5)
-	lastJID   string // último número (JID) que esteve conectado; mantido após desconectar
+	mu          sync.Mutex
+	sipConfigMu sync.Mutex
+	auth        AuthSnapshot
+	webhooks    []WebhookTarget // Session webhooks; the default keeps the legacy /webhook route.
+	webhookMu   sync.Mutex      // Serializes webhook changes and persistence.
+	avatars     avatarCache     // Profile image cache used by Chatwoot.
+	chatwoot    ChatwootConfig
+	recording   bool   // Records calls for this session when enabled.
+	proxy       string // Outbound WhatsApp connection proxy (HTTP, HTTPS, or SOCKS5).
+	lastJID     string // Last connected WhatsApp JID; retained after disconnect.
 
-	// Credenciais SIP desta sessão (modelo Wavoip: o PBX do cliente se registra
-	// no AstraCalls usando estes dados). Definidas na criação da sessão.
+	// Direct SIP credentials for this session. Mutable through the Web UI and
+	// protected by s.mu; sipConfigMu serializes persistence with memory updates.
 	SIPUser string
 	SIPPass string
 	SIPURL  string
@@ -1040,6 +1041,8 @@ func (s *Session) info() SessionInfo {
 		s.lastJID = jid // enquanto conectado, memoriza o número atual
 	}
 	last := s.lastJID
+	sipUser := s.SIPUser
+	sipURL := s.SIPURL
 	extEnabled := s.SIPExtEnabled
 	extHost := s.SIPExtHost
 	extPort := s.SIPExtPort
@@ -1053,7 +1056,7 @@ func (s *Session) info() SessionInfo {
 	return SessionInfo{
 		ID: s.id, Name: name, JID: jid, LastJID: last, State: a.State,
 		Paired: a.Paired || jid != "", Recording: rec,
-		SIPUser: s.SIPUser, SIPURL: s.SIPURL,
+		SIPUser: sipUser, SIPURL: sipURL,
 		SIPExtEnabled: extEnabled, SIPExtHost: extHost, SIPExtPort: extPort,
 		SIPExtUser: extUser, SIPExtDest: extDest, SIPExtProxy: extProxy,
 		SIPExtStatus: extStatus, SIPExtError: extErr, SIPExtInboundMode: inboundMode,
@@ -1295,6 +1298,19 @@ func (o sipAgentOpts) ringTimeout() time.Duration {
 		return time.Duration(ringTimeoutSecs) * time.Second
 	}
 	return 60 * time.Second
+}
+
+func (s *Session) directSIPCredentials() (user, pass, url string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.SIPUser, s.SIPPass, s.SIPURL
+}
+
+func (s *Session) setDirectSIPCredentials(user, pass string) {
+	s.mu.Lock()
+	s.SIPUser = user
+	s.SIPPass = pass
+	s.mu.Unlock()
 }
 
 func (s *Session) sipExtSnapshot() sipExtConfig {
