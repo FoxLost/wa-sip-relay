@@ -4,6 +4,8 @@ WA SIP Relay connects multiple WhatsApp accounts to SIP phones or an external
 PBX. It contains its own SIP registrar, RTP media bridge, administration panel,
 persistent per-account call history, and remote phonebook feeds.
 
+<img src="picture/webui.png" alt="WA SIP Relay administration panel with a connected WhatsApp account and a registered SIP endpoint" width="900">
+
 ```mermaid
 flowchart LR
     WA[WhatsApp network] <--> R[WA SIP Relay]
@@ -25,6 +27,22 @@ flowchart LR
 - Registered SIP endpoint inventory with client name and source IP.
 - English and Indonesian administration UI.
 - Linux amd64 and arm64 Docker images.
+
+## Tested SIP endpoints
+
+The relay has been reported working in real-device testing with:
+
+- **Grandstream GRP2601P** IP phone.
+- **Repurposed FiberHome ONT** previously supplied by an ISP.
+- **Huawei EchoLife HG8245H5** ONT with an analog telephone.
+- **Android SIP clients**.
+
+ONT use requires configurable SIP settings and an enabled FXS (TEL) port for an
+analog telephone. These results cover the tested setups, not every ONT firmware
+or Android SIP application.
+
+<img src="picture/Grandstream%20GRP2601P.jpg" alt="Grandstream GRP2601P used with WA SIP Relay" width="320">
+<img src="picture/Huawei%20HG8245H5.jpg" alt="Huawei HG8245H5 and an analog telephone used with WA SIP Relay" width="320">
 
 ## Storage
 
