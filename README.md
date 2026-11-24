@@ -33,13 +33,11 @@ flowchart LR
 The relay has been reported working in real-device testing with:
 
 - **Grandstream GRP2601P** IP phone.
-- **Repurposed FiberHome ONT** previously supplied by an ISP.
 - **Huawei EchoLife HG8245H5** ONT with an analog telephone.
 - **Android SIP clients**.
 
 ONT use requires configurable SIP settings and an enabled FXS (TEL) port for an
-analog telephone. These results cover the tested setups, not every ONT firmware
-or Android SIP application.
+analog telephone.
 
 <img src="picture/Grandstream%20GRP2601P.jpg" alt="Grandstream GRP2601P used with WA SIP Relay" width="320">
 <img src="picture/Huawei%20HG8245H5.jpg" alt="Huawei HG8245H5 and an analog telephone used with WA SIP Relay" width="320">
